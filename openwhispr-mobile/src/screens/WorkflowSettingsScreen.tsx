@@ -36,7 +36,6 @@ import {
   CLOUD_CLEANUP_NEEDS_ACCOUNT_NOTE,
   LOCAL_MODE_DICTATION_NOTES,
   ON_DEVICE_MODE_NOTES,
-  PRIVATE_MODE_LOCKED_REASON,
   ON_DEVICE_CLEANUP_UNSUPPORTED_NOTE,
   UNSET_PROVIDER_NOTES,
   WORKFLOW_LABELS,
@@ -194,11 +193,18 @@ function NoteChatSettings(): React.JSX.Element {
   );
 }
 
-// Local Mode turns the voice assistant off.
-function VoiceAssistantSettings(): React.JSX.Element {
+// Local Mode runs the voice assistant on Apple Intelligence, so it is locked off only on an iPhone
+// that can never run it (onDeviceUnsupported says why).
+function VoiceAssistantSettings({
+  onDeviceUnsupported,
+}: {
+  onDeviceUnsupported: string | null;
+}): React.JSX.Element {
   const config = useConfigStore((state) => state.config);
   const updateConfig = useConfigStore((state) => state.updateConfig);
-  const privateMode = useProcessingModeStore((state) => state.activeMode === 'private');
+  const locked = useProcessingModeStore(
+    (state) => state.activeMode === 'private' && !!onDeviceUnsupported,
+  );
   const voiceEnabled = config ? isDictationAgentEnabled(config) : true;
   const agentName = config ? getDictationAgentName(config) : undefined;
   return (
@@ -209,16 +215,16 @@ function VoiceAssistantSettings(): React.JSX.Element {
         mdIcon="UserRoundCog"
         title="Voice Assistant"
         description={
-          privateMode
-            ? PRIVATE_MODE_LOCKED_REASON
+          locked && onDeviceUnsupported
+            ? onDeviceUnsupported
             : 'Say your assistant’s name while dictating to give it commands.'
         }
-        disabled={privateMode}
+        disabled={locked}
         rightElement={
           <SettingsSwitch
             accessibilityLabel="Voice Assistant"
-            value={voiceEnabled && !privateMode}
-            disabled={privateMode}
+            value={voiceEnabled && !locked}
+            disabled={locked}
             onValueChange={(enabled) => {
               safeHaptics('light');
               void updateConfig(voiceAssistantToggleConfig(config, enabled));
@@ -227,7 +233,7 @@ function VoiceAssistantSettings(): React.JSX.Element {
         }
         showChevron={false}
       />
-      {voiceEnabled && !privateMode ? (
+      {voiceEnabled && !locked ? (
         <SettingsRow
           iconStyle="line"
           icon="slider.horizontal.3"
@@ -759,7 +765,9 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
       >
         {scope === 'cleanup' ? <CleanupSettings enabled={!workflowOff} /> : null}
         {scope === 'noteChat' ? <NoteChatSettings /> : null}
-        {scope === 'agent' ? <VoiceAssistantSettings /> : null}
+        {scope === 'agent' ? (
+          <VoiceAssistantSettings onDeviceUnsupported={onDeviceUnsupported} />
+        ) : null}
         {workflowOff ? null : (
           <>
             <InferenceModePicker

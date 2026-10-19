@@ -197,12 +197,13 @@ it('shows On-Device cleanup as running in On-Device mode', async () => {
   await screen.findByText(/Status: Ready/);
 });
 
-it('says cleanup is skipped, and why, while Apple Intelligence is off', async () => {
+// Local Mode runs cleanup and the voice assistant on Apple Intelligence.
+it('says cleanup and the voice assistant are skipped, and why, while Apple Intelligence is off', async () => {
   mockReadiness.mockResolvedValue({ status: 'appleIntelligenceOff', tokenCounting: false });
   mockActiveMode = 'private';
   mockConfig = { defaultMode: 'private', inference: { dictation: { mode: 'local' } } };
   render(<AIModelsScreen />);
-  expect(await screen.findByText('Skipped · Apple Intelligence off')).toBeTruthy();
+  expect(await screen.findAllByText('Skipped · Apple Intelligence off')).toHaveLength(2);
 });
 
 it('shows provider note chat as On-Device, which answers it on this iPhone first', async () => {

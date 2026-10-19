@@ -36,11 +36,8 @@ export const LOCAL_MODE_DICTATION_NOTES = {
 export const ON_DEVICE_MODE_NOTES: Partial<Record<MobileInferenceScope, string>> = {
   notes: 'Local Mode formats notes on this iPhone and asks before sending one to your choice here.',
   noteChat: 'In Local Mode note chat asks before sending a note off this iPhone.',
-  agent: 'In Local Mode the voice assistant is off.',
+  agent: 'In Local Mode the voice assistant runs on Apple Intelligence on this iPhone.',
 };
-
-export const PRIVATE_MODE_LOCKED_REASON =
-  'Off while Local Mode is on. Change Dictation in AI Models to turn it off.';
 
 // Local Mode dictates on this iPhone, so cleaning with OpenWhispr Cloud is a separate Cloud pass,
 // which needs a signed-in account.
@@ -119,6 +116,9 @@ export function workflowSummary(
       return `Skipped · ${onDeviceUnavailable}`;
     if (cloudCleanupNeedsAccount(config, activeMode, cloudAccess)) return 'Skipped · Sign in';
   }
+  // Local Mode runs the voice assistant on Apple Intelligence, whatever is saved for it.
+  if (activeMode === 'private' && scope === 'agent' && onDeviceUnavailable)
+    return `Skipped · ${onDeviceUnavailable}`;
   const selection = config?.inference?.[scope] ?? unsetSelection(scope, activeMode, cloudAccess);
   // Local Mode runs dictation, note formatting and provider note chat on this phone first, whatever
   // is saved; note chat set to OpenWhispr, or not set, goes straight to Cloud. Uploads and cleanup

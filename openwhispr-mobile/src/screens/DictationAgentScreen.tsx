@@ -12,7 +12,6 @@ import {
   isDictationAgentEnabled,
   voiceAssistantToggleConfig,
 } from '@/lib/dictationAgent';
-import { PRIVATE_MODE_LOCKED_REASON } from '@/lib/aiWorkflows';
 import { safeHaptics } from '@/lib/utils';
 import { iosColor } from '@/config/colors';
 import { AppFont } from '@/lib/fonts';
@@ -27,11 +26,9 @@ export function DictationAgentScreen(): React.JSX.Element {
   const agentSelected = !!config?.inference?.agent;
   // Bring Your Own Key skips the assistant until it has a selection of its own.
   const unavailableNotice =
-    activeMode === 'private'
-      ? `${PRIVATE_MODE_LOCKED_REASON} Your settings are saved and apply once Local Mode is off.`
-      : activeMode === 'providers' && !agentSelected
-        ? 'Bring Your Own Key skips the voice assistant until Voice Assistant has a selection. Your settings are saved and apply once it does.'
-        : null;
+    activeMode === 'providers' && !agentSelected
+      ? 'Bring Your Own Key skips the voice assistant until Voice Assistant has a selection. Your settings are saved and apply once it does.'
+      : null;
   const isAvailable = !unavailableNotice;
   const enabled = config ? isDictationAgentEnabled(config) : true;
   const shareContext = config?.dictationAgentShareContext ?? false;
@@ -64,8 +61,8 @@ export function DictationAgentScreen(): React.JSX.Element {
         <View className="mx-4 mb-2 px-4">
           <Text className="text-[13px] text-secondaryLabel">
             When you say your assistant’s name while dictating, OpenWhispr rewrites what you said
-            into polished, ready-to-use text instead of inserting it word for word. Requires Cloud
-            or Bring Your Own Key mode.
+            into polished, ready-to-use text instead of inserting it word for word. In Local Mode it
+            runs on Apple Intelligence on this iPhone.
           </Text>
         </View>
 

@@ -154,3 +154,17 @@ describe('workflowSummary for Uploads', () => {
     );
   });
 });
+
+describe('Voice Assistant in Local Mode', () => {
+  it('says it is skipped while Apple Intelligence cannot run', () => {
+    expect(
+      workflowSummary(config({}), 'agent', 'private', {
+        onDeviceUnavailable: 'Apple Intelligence off',
+      }),
+    ).toBe('Skipped · Apple Intelligence off');
+  });
+
+  it('runs On-Device while Apple Intelligence can', () => {
+    expect(workflowSummary(config({}), 'agent', 'private')).toBe('On-Device');
+  });
+});
