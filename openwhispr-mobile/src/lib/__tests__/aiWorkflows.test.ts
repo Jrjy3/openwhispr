@@ -168,3 +168,23 @@ describe('Voice Assistant in Local Mode', () => {
     expect(workflowSummary(config({}), 'agent', 'private')).toBe('On-Device');
   });
 });
+
+describe('workflowSummary for switched-off workflows', () => {
+  const groq = { mode: 'providers' as const, providerId: 'groq', modelId: 'llama' };
+
+  it('says Off for Note Chat and the Voice Assistant switched off, even with a key missing', () => {
+    const saved = config({
+      defaultMode: 'cloud',
+      noteChatEnabled: false,
+      dictationAgentEnabled: false,
+      inference: { noteChat: groq, agent: groq },
+    });
+    expect(workflowSummary(saved, 'noteChat', 'cloud', { keyMissing: true })).toBe('Off');
+    expect(workflowSummary(saved, 'agent', 'cloud', { keyMissing: true })).toBe('Off');
+  });
+
+  it('keeps Note Chat on when only the Voice Assistant is switched off', () => {
+    const saved = config({ defaultMode: 'cloud', dictationAgentEnabled: false });
+    expect(workflowSummary(saved, 'noteChat', 'cloud')).toBe('OpenWhispr Cloud');
+  });
+});

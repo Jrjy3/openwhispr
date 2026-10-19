@@ -1,4 +1,5 @@
 import type { AuthUser } from '@/lib/authClient';
+import { isDictationAgentEnabled, isNoteChatEnabled } from '@/lib/dictationAgent';
 import type { InferenceSelection } from '@/lib/mobileProviders';
 import { localModeDefault, MODE_LABELS, type CloudAccess } from '@/lib/inferenceModes';
 import { isLocalModelKey, LOCAL_MODEL_TITLES } from '@/lib/localModelCatalog';
@@ -76,6 +77,19 @@ export function cleanupRunsOnDevice(
   );
 }
 
+// Text Cleanup, Note Chat and the Voice Assistant have switches of their own; switched off, they
+// run nothing and use no key.
+export function workflowSwitchedOff(
+  config: UserConfig | null,
+  scope: MobileInferenceScope,
+): boolean {
+  if (!config) return false;
+  if (scope === 'cleanup') return !(config.cleanupEnabled ?? true);
+  if (scope === 'noteChat') return !isNoteChatEnabled(config);
+  if (scope === 'agent') return !isDictationAgentEnabled(config);
+  return false;
+}
+
 export function parseWorkflow(value: unknown): MobileInferenceScope | null {
   return WORKFLOWS.find((scope) => scope === value) ?? null;
 }
@@ -110,8 +124,8 @@ export function workflowSummary(
     cloudAccess?: CloudAccess;
   } = {},
 ): string {
+  if (workflowSwitchedOff(config, scope)) return 'Off';
   if (scope === 'cleanup') {
-    if (!(config?.cleanupEnabled ?? true)) return 'Off';
     if (cleanupRunsOnDevice(config, activeMode, cloudAccess) && onDeviceUnavailable)
       return `Skipped · ${onDeviceUnavailable}`;
     if (cloudCleanupNeedsAccount(config, activeMode, cloudAccess)) return 'Skipped · Sign in';

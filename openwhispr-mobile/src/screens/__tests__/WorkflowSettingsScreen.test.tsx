@@ -795,11 +795,18 @@ describe('the Note Chat page', () => {
     expect(screen.queryByText('OpenWhispr Cloud')).toBeNull();
   });
 
-  // Note chat once followed the voice assistant's switch, and still does until it is set.
-  it('is off when the old shared switch was turned off', () => {
+  it('stays on when only the voice assistant is off', () => {
     mockConfig = { defaultMode: 'cloud', dictationAgentEnabled: false };
     render(<WorkflowSettingsScreen />);
-    expect(screen.getByLabelText('Note Chat').props.value).toBe(false);
+    expect(screen.getByLabelText('Note Chat').props.value).toBe(true);
+  });
+
+  it('says what switching note chat off does', () => {
+    mockConfig = { defaultMode: 'cloud', noteChatEnabled: false };
+    render(<WorkflowSettingsScreen />);
+    expect(
+      screen.getByText('Notes don’t offer Ask about this note while note chat is off.'),
+    ).toBeTruthy();
   });
 
   it('lists Note Chat and Voice Assistant as sharing a provider key', async () => {
@@ -822,12 +829,8 @@ describe('the Voice Assistant page', () => {
     const page = JSON.stringify(view.toJSON());
     expect(page.indexOf('Voice Assistant Settings')).toBeLessThan(page.indexOf('OpenWhispr Cloud'));
     expect(screen.queryByLabelText('Note Chat')).toBeNull();
-    // Note chat stops following the voice assistant's switch once that is changed.
     fireEvent(screen.getByLabelText('Voice Assistant'), 'valueChange', false);
-    expect(mockUpdateConfig).toHaveBeenCalledWith({
-      dictationAgentEnabled: false,
-      noteChatEnabled: true,
-    });
+    expect(mockUpdateConfig).toHaveBeenCalledWith({ dictationAgentEnabled: false });
     fireEvent.press(screen.getByText('Voice Assistant Settings'));
     expect(mockPush).toHaveBeenCalledWith('/(account)/dictation-agent');
   });
@@ -838,6 +841,11 @@ describe('the Voice Assistant page', () => {
     expect(screen.getByLabelText('Voice Assistant').props.value).toBe(false);
     expect(screen.queryByText('OpenWhispr Cloud')).toBeNull();
     expect(screen.queryByText('Voice Assistant Settings')).toBeNull();
+    expect(
+      screen.getByText(
+        'Saying your assistant’s name gives no commands; what you dictate is inserted as usual.',
+      ),
+    ).toBeTruthy();
   });
 
   // Local Mode runs dictation commands on Apple Intelligence.
@@ -878,6 +886,20 @@ it('treats Note Chat as unused for keys once its switch is off', async () => {
   };
   render(<WorkflowSettingsScreen />);
   expect(screen.getByText('Stays on this iPhone. Also used by Dictation.')).toBeTruthy();
+  await waitFor(() => expect(mockCredentialStatus).toHaveBeenCalled());
+});
+
+// Local Mode never runs the voice assistant on its saved provider.
+it('treats the Voice Assistant as unused for keys in Local Mode', async () => {
+  mockCredentialStatus.mockResolvedValue({ isConfigured: true });
+  mockActiveMode = 'private';
+  mockScope = 'noteChat';
+  const groq = { mode: 'providers', providerId: 'groq', modelId: 'openai/gpt-oss-20b' };
+  mockConfig = { defaultMode: 'private', inference: { noteChat: groq, agent: groq } };
+  render(<WorkflowSettingsScreen />);
+  expect(
+    screen.getByText('Stays on this iPhone. Every workflow set to Groq uses the same key.'),
+  ).toBeTruthy();
   await waitFor(() => expect(mockCredentialStatus).toHaveBeenCalled());
 });
 

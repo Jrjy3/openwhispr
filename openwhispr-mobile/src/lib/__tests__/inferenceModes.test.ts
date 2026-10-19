@@ -449,7 +449,7 @@ describe('noteChatSplitConfig', () => {
     expect(next.privateModeReturn).toEqual({ pinned: { agent: groqChat, noteChat: groqChat } });
   });
 
-  it('keeps note chat on when only the voice assistant was switched off later', () => {
+  it("saves note chat's switch as it stood, following the voice assistant's", () => {
     expect(noteChatSplitConfig({ defaultMode: 'cloud' }).noteChatEnabled).toBe(true);
     expect(
       noteChatSplitConfig({ defaultMode: 'cloud', dictationAgentEnabled: false }).noteChatEnabled,

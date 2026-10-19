@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import type { LucideIconName } from '@/components/ui/SystemIcon';
 import type { InferenceSelection, MobileInferenceScope } from '@/lib/mobileProviders';
-import { isNoteChatEnabled } from '@/lib/dictationAgent';
+import { isDictationAgentEnabled } from '@/lib/dictationAgent';
 import {
   inferenceToProcessingMode,
   processingToInferenceMode,
@@ -149,7 +149,9 @@ function providerDictationConfig(
             scope,
             {
               // Each holds what ran in the mode being left: uploads in Local Mode ran on
-              // OpenWhispr Cloud when there was a session.
+              // OpenWhispr Cloud when there was a session. Unset note chat ran on Cloud after
+              // asking; Bring Your Own Key would send it there without asking, so it is held
+              // On-Device, as it was before it had a setting of its own.
               mode:
                 leavingMode === 'private' && scope === 'upload'
                   ? localModeDefault(scope, cloudAccess)
@@ -266,7 +268,9 @@ export function noteChatSplitConfig(config: UserConfig): Partial<UserConfig> {
   return {
     noteChatSplit: true,
     // Note chat's switch followed the voice assistant's until set; saving it keeps it put.
-    ...(config.noteChatEnabled === undefined ? { noteChatEnabled: isNoteChatEnabled(config) } : {}),
+    ...(config.noteChatEnabled === undefined
+      ? { noteChatEnabled: isDictationAgentEnabled(config) }
+      : {}),
     ...(copied ? { inference: { ...config.inference, noteChat: agent } } : {}),
     ...(rememberedAgent && !config.rememberedInference?.noteChat
       ? { rememberedInference: { ...config.rememberedInference, noteChat: rememberedAgent } }

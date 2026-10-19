@@ -49,7 +49,7 @@ export interface UserConfig {
   appleLocalIntelligenceEnabled?: boolean;
   // Dictation agent (cloud-only, default on)
   dictationAgentEnabled?: boolean;
-  // Note chat, which once shared dictationAgentEnabled's switch and follows it until set.
+  // Note chat, which once shared dictationAgentEnabled's switch (saved apart by noteChatSplitConfig).
   noteChatEnabled?: boolean;
   dictationAgentName?: string;
   dictationAgentShareContext?: boolean;
