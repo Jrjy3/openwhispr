@@ -10,7 +10,7 @@ import {
   readCachedTinfoilModels,
   writeCachedTinfoilModels,
 } from "./tinfoilModelCache";
-import { INFERENCE_SCOPES } from "../config/inferenceScopes";
+import { INFERENCE_SCOPES, usesCloudModelCatalog } from "../config/inferenceScopes";
 import { getSettings, setStringSetting } from "../stores/settingsStore";
 import { recordTinfoilModelSwitch } from "../stores/tinfoilModelSwitchStore";
 
@@ -68,7 +68,7 @@ function reconcileSelectedModels(
 
   for (const scope of Object.values(INFERENCE_SCOPES)) {
     const { mode, provider, model } = scope.storeKeys;
-    if (settings[mode] !== "providers" && settings[mode] !== "openwhispr") continue;
+    if (!usesCloudModelCatalog(settings[mode])) continue;
     if (settings[provider] !== "tinfoil") continue;
 
     const selected = settings[model];

@@ -118,3 +118,12 @@ export const INFERENCE_SCOPES = {
 } as const satisfies Record<string, InferenceScopeDefinition>;
 
 export type InferenceScope = keyof typeof INFERENCE_SCOPES;
+
+/**
+ * Whether a scope in this mode runs its provider/model pair against a cloud
+ * catalog. Self-hosted, local and enterprise modes share the model key but can
+ * keep an old cloud provider, so catalog repairs must leave them alone.
+ */
+export function usesCloudModelCatalog(mode: unknown): boolean {
+  return mode === "providers" || mode === "openwhispr";
+}

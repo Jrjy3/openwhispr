@@ -28,6 +28,7 @@ import {
   type InferenceScope,
   type InferenceScopeDefinition,
   type InferenceScopeStoreKeys,
+  usesCloudModelCatalog,
 } from "../config/inferenceScopes";
 import { normalizeChineseScriptPreference } from "../utils/chineseScript";
 import { adjustBedrockModelForRegion } from "../utils/bedrockRegions";
@@ -857,8 +858,8 @@ function migrateRetiredCloudModels() {
       .map(({ storeKeys }) => storeKeys)
       .filter(({ mode }) => {
         const storedMode = localStorage.getItem(mode);
-        // Profiles predating scope modes still need the legacy migration.
-        return !storedMode || storedMode === "providers" || storedMode === "openwhispr";
+        // An unset mode loads as the default, openwhispr.
+        return !storedMode || usesCloudModelCatalog(storedMode);
       })
   );
   if (swept.length === 0) return;
@@ -3221,9 +3222,7 @@ export async function reconcileLocalModelSelections(): Promise<void> {
 export function reconcileRetiredCloudModelSelections(): void {
   const state = useSettingsStore.getState() as unknown as Record<string, unknown>;
   for (const scope of Object.values(INFERENCE_SCOPES)) {
-    const mode = state[scope.storeKeys.mode];
-    // Self-hosted, local and enterprise modes can retain an old cloud provider.
-    if (mode !== "providers" && mode !== "openwhispr") continue;
+    if (!usesCloudModelCatalog(state[scope.storeKeys.mode])) continue;
     const provider = state[scope.storeKeys.provider] as string;
     const model = state[scope.storeKeys.model] as string;
     if (!provider || !model || provider === "tinfoil") continue;
