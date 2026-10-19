@@ -73,7 +73,6 @@ export function localModeDefault(
   cloudAccess: CloudAccess,
 ): InferenceMode {
   const onCloud =
-    scope === 'agent' ||
     scope === 'noteChat' ||
     (scope === 'upload' && cloudAccess !== 'none') ||
     (scope === 'cleanup' && cloudAccess === 'account');

@@ -331,3 +331,37 @@ describe('after signing out', () => {
     await expect(getProviderPolicy()).resolves.toEqual({ status: 'unmanaged' });
   });
 });
+
+// Work that stays on this iPhone reads the policy as last fetched, never over the network.
+describe('the cached policy', () => {
+  function cachedPolicy(): InferencePolicy {
+    return jest
+      .requireActual<typeof import('../ProviderPolicy')>('../ProviderPolicy')
+      .getCachedProviderPolicy();
+  }
+
+  it('is the policy last fetched for the account, read without a request', async () => {
+    mockGet.mockResolvedValueOnce(managedEnvelope());
+    await getProviderPolicy();
+    mockGet.mockClear();
+    expect(cachedPolicy()).toEqual(denied);
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('is unresolved before any fetch for a signed-in account', () => {
+    expect(cachedPolicy()).toEqual({ status: 'pending' });
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('keeps the last managed policy after signing out', async () => {
+    mockGet.mockResolvedValueOnce(managedEnvelope());
+    await getProviderPolicy();
+    mockAuthState = { user: null, isGuest: false, sessionCookie: null };
+    expect(cachedPolicy()).toEqual(denied);
+  });
+
+  it('is unmanaged for a guest with no managed account before', () => {
+    mockAuthState = { user: null, isGuest: true, sessionCookie: null };
+    expect(cachedPolicy()).toEqual({ status: 'unmanaged' });
+  });
+});

@@ -19,6 +19,13 @@ jest.mock('@/services/reasoning/ReasoningService', () => ({
   },
 }));
 
+jest.mock('@/services/providers/ProviderPolicy', () => ({
+  getCachedProviderPolicy: () => ({ status: 'unmanaged' }),
+}));
+jest.mock('@/lib/localReasoning', () => ({
+  ...jest.requireActual('@/lib/localReasoning'),
+  getLocalReasoningReadiness: jest.fn(async () => ({ status: 'ready', tokenCounting: false })),
+}));
 jest.mock('@/store/useAuthStore', () => ({
   useAuthStore: { getState: () => ({ user: { id: 'u', isAnonymous: false } }) },
 }));
@@ -153,10 +160,27 @@ describe('cleanupTranscript agentName — feature disabled (regression guard)', 
       dictationAgentEnabled: true,
     };
 
-    await cleanupTranscript('hey OpenWhispr do something', { context: 'keyboard' });
+    await cleanupTranscript('hey OpenWhispr do something', {
+      context: 'keyboard',
+      agentRoute: { mode: 'local', scope: 'agent' },
+    });
 
     const req = mockProcessText.mock.calls[0][0] as Record<string, unknown>;
     expect(req.agentName).toBe('OpenWhispr');
+  });
+
+  // A recording sent to Cloud with consent is cleaned there, never run as a command.
+  it('passes no agentName in Local Mode for a Cloud voice assistant route', async () => {
+    mockActiveMode = 'private';
+    mockConfig = { cleanupEnabled: true, defaultMode: 'private', dictationAgentEnabled: true };
+
+    await cleanupTranscript('hey OpenWhispr do something', {
+      context: 'keyboard',
+      agentRoute: { mode: 'openwhispr', scope: 'agent' },
+    });
+
+    const req = mockProcessText.mock.calls[0][0] as Record<string, unknown>;
+    expect(req.agentName).toBeUndefined();
   });
 });
 

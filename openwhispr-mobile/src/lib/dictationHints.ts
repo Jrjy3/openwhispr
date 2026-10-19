@@ -3,7 +3,7 @@ import { useSnippetsStore } from '@/store/useSnippetsStore';
 import { useConfigStore } from '@/store/useConfigStore';
 import { useProcessingModeStore } from '@/store/useProcessingModeStore';
 import type { TranscriptionRequest } from '@/types';
-import { getDictationAgentName, isDictationAgentApplicable } from './dictationAgent';
+import { getDictationAgentName, isDictationAgentEnabled } from './dictationAgent';
 import { getDictionaryHintWords } from './snippets';
 
 // Snippet expansion and snippet-trigger hints apply to spoken dictation only —
@@ -20,8 +20,8 @@ export function isDictationContext(
 // transcription and cleanup. Dictionary words are always included; only the
 // snippet triggers are gated by `includeSnippetTriggers`.
 //
-// When the dictation agent is applicable (cloud + enabled), the agent name is
-// appended so the STT model hears it correctly — mirrors desktop parity.
+// While the voice assistant is on, its name is appended so the STT model hears it
+// correctly — mirrors desktop parity.
 export function buildDictationHints(includeSnippetTriggers: boolean): string[] {
   const dict = useDictionaryStore.getState();
   const customDictionary = dict.isLoaded ? dict.entries.map((e) => e.word) : [];
@@ -30,15 +30,10 @@ export function buildDictationHints(includeSnippetTriggers: boolean): string[] {
 
   const cfg = useConfigStore.getState().config;
   const activeMode = useProcessingModeStore.getState().activeMode;
-  const agentApplicable = isDictationAgentApplicable(
-    activeMode,
-    cfg ?? { defaultMode: activeMode },
-  );
+  const config = cfg ?? { defaultMode: activeMode };
 
   // Deduplicate in case the user already added the agent name to their dictionary.
-  const agentName = agentApplicable
-    ? getDictationAgentName(cfg ?? { defaultMode: activeMode })
-    : undefined;
+  const agentName = isDictationAgentEnabled(config) ? getDictationAgentName(config) : undefined;
 
   const baseHints = getDictionaryHintWords({ customDictionary, snippets });
 

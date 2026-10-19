@@ -4,7 +4,11 @@
  * run must hand back the raw transcript after one attempt, since a retry would
  * meet the same refusal or time out again.
  */
-import { CLEANUP_TIMEOUT_MS, cleanupTranscript } from '@/lib/cleanupTranscript';
+import {
+  AGENT_ACTION_TIMEOUT_MS,
+  CLEANUP_TIMEOUT_MS,
+  cleanupTranscript,
+} from '@/lib/cleanupTranscript';
 
 interface MockNativeAppleLLM {
   getAvailability: jest.Mock;
@@ -43,6 +47,9 @@ jest.mock('@/store/useConfigStore', () => ({
 }));
 jest.mock('@/store/useProcessingModeStore', () => ({
   useProcessingModeStore: { getState: () => ({ activeMode: 'private' }) },
+}));
+jest.mock('@/services/providers/ProviderPolicy', () => ({
+  getCachedProviderPolicy: () => ({ status: 'unmanaged' }),
 }));
 jest.mock('@/store/useAuthStore', () => ({
   useAuthStore: { getState: () => ({ user: { id: 'u', isAnonymous: false } }) },
@@ -140,6 +147,24 @@ it.each([
   expect(mockNative.generateText).toHaveBeenCalledTimes(1);
 
   await expect(result).resolves.toBe('um hello there');
+  expect(onSkipped).toHaveBeenCalledWith(`${reason} Your raw transcript is saved.`);
+});
+
+// A command that fails on Apple Intelligence names the voice assistant, not cleanup.
+it.each([
+  ['APPLE_LLM_CONTEXT_LIMIT', 'This command is too long for Apple Intelligence.'],
+  ['APPLE_LLM_FAILED', 'The voice assistant failed.'],
+])('names the voice assistant when a command fails with %s', async (code, reason) => {
+  mockNative.generateText.mockRejectedValue(Object.assign(new Error('refused'), { code }));
+  const onSkipped = jest.fn();
+  const result = cleanupTranscript('Hey OpenWhispr write a haiku', {
+    context: 'recording',
+    agentRoute: { mode: 'local', scope: 'agent' },
+    onSkipped,
+  });
+
+  await jest.advanceTimersByTimeAsync(AGENT_ACTION_TIMEOUT_MS);
+  await expect(result).resolves.toBe('Hey OpenWhispr write a haiku');
   expect(onSkipped).toHaveBeenCalledWith(`${reason} Your raw transcript is saved.`);
 });
 

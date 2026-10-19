@@ -8,8 +8,9 @@ import { requiresRealAccount } from './accountAccess';
 import type { KeyboardTone, ReasoningRequest, TextInferenceSnapshot } from '@/types';
 import {
   getDictationAgentName,
-  isDictationAgentApplicable,
   detectAgentMention,
+  isDictationAgentEnabled,
+  runsDictationCommands,
 } from './dictationAgent';
 import { buildDictationHints } from './dictationHints';
 import {
@@ -63,7 +64,10 @@ function localCleanupTimeoutMs(transcriptTokens: number): number {
   );
 }
 
-const TOO_LONG_FOR_ON_DEVICE = 'This transcript is too long for On-Device cleanup.';
+const TOO_LONG = {
+  cleanup: 'This transcript is too long for On-Device cleanup.',
+  agent: 'This command is too long for Apple Intelligence.',
+} as const;
 
 // Why an on-device pass can't run, or, for cleanup, the transcript's length in tokens.
 async function prepareLocalRun(
@@ -79,21 +83,21 @@ async function prepareLocalRun(
   if (scope !== 'cleanup') return {};
   const tokens = (await countLocalReasoningTokens({ prompt: text })) ?? estimateLocalTokens(text);
   return tokens > LOCAL_CLEANUP_MAX_TRANSCRIPT_TOKENS
-    ? { skipReason: TOO_LONG_FOR_ON_DEVICE }
+    ? { skipReason: TOO_LONG.cleanup }
     : { tokens };
 }
 
-// Apple Intelligence's common failures say what happened. The only signal a cleanup run gets is
-// its timeout, so a cancelled one took too long.
-function cleanupFailureReason(error: unknown): string {
+// Apple Intelligence's common failures say what happened. The only signal a run gets is its
+// timeout, so a cancelled one took too long.
+function cleanupFailureReason(error: unknown, scope: 'cleanup' | 'agent'): string {
   if (error instanceof LocalReasoningError) {
     if (error.code === 'APPLE_LLM_CANCELLED') return 'Apple Intelligence took too long.';
     if (error.code === 'APPLE_LLM_RATE_LIMITED') return 'Apple Intelligence was busy.';
     if (error.code === 'LOCAL_CONTEXT_LIMIT' || error.code === 'APPLE_LLM_CONTEXT_LIMIT') {
-      return TOO_LONG_FOR_ON_DEVICE;
+      return TOO_LONG[scope];
     }
   }
-  return 'Cleanup failed.';
+  return scope === 'agent' ? 'The voice assistant failed.' : 'Cleanup failed.';
 }
 
 function isDictationCleanupContext(context: CleanupContext | undefined): boolean {
@@ -124,16 +128,25 @@ export async function cleanupTranscript(
   const customDictionary = hintWords.length > 0 ? hintWords : undefined;
 
   const activeMode = useProcessingModeStore.getState().activeMode;
-  const agentApplicable =
-    isDictationCleanupContext(options.context) &&
-    isDictationAgentApplicable(activeMode, cfg ?? { defaultMode: activeMode });
-  const agentName = agentApplicable
-    ? getDictationAgentName(cfg ?? { defaultMode: activeMode })
-    : undefined;
+  const config = cfg ?? { defaultMode: activeMode };
+  const enabledName =
+    isDictationCleanupContext(options.context) && isDictationAgentEnabled(config)
+      ? getDictationAgentName(config)
+      : undefined;
+  const mentioned = enabledName !== undefined && detectAgentMention(rawText, enabledName);
+  // A Cloud route also looks for the name on the server, so it gets the name only where commands
+  // run; any other route acts on it only when it is mentioned.
+  const agentMode = (options.agentRoute ?? cfg?.inference?.agent)?.mode;
+  const agentName =
+    enabledName !== undefined &&
+    (mentioned || agentMode !== 'local') &&
+    (await runsDictationCommands(config, activeMode, agentMode))
+      ? enabledName
+      : undefined;
 
   // Bump timeout only when the mention is detected — ordinary dictation shouldn't
   // wait longer on a slow network just because the feature is on.
-  const mentionDetected = agentName !== undefined && detectAgentMention(rawText, agentName);
+  const mentionDetected = agentName !== undefined && mentioned;
   let timeoutMs = mentionDetected ? AGENT_ACTION_TIMEOUT_MS : CLEANUP_TIMEOUT_MS;
   const scope = mentionDetected ? 'agent' : 'cleanup';
   const snapshottedRoute = mentionDetected
@@ -252,12 +265,14 @@ export async function cleanupTranscript(
     // A reasoning model can spend its whole reply thinking; an empty result
     // would otherwise replace the transcript with nothing.
     if (!result.text.trim()) {
-      options.onSkipped?.('Cleanup returned no text. Your raw transcript is saved.');
+      options.onSkipped?.(
+        `${scope === 'agent' ? 'The voice assistant' : 'Cleanup'} returned no text. Your raw transcript is saved.`,
+      );
       return rawText;
     }
     return result.text;
   } catch (err) {
-    options.onSkipped?.(`${cleanupFailureReason(err)} Your raw transcript is saved.`);
+    options.onSkipped?.(`${cleanupFailureReason(err, scope)} Your raw transcript is saved.`);
     if (configuredRoute?.mode !== 'providers')
       console.warn('Reasoning failed after retries, using original transcription:', err);
     return rawText;

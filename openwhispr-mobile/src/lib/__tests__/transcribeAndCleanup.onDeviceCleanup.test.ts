@@ -37,6 +37,9 @@ jest.mock('@/lib/localReasoning', () => ({
   getLocalReasoningReadiness: jest.fn(),
   countLocalReasoningTokens: jest.fn(),
 }));
+jest.mock('@/services/providers/ProviderPolicy', () => ({
+  getCachedProviderPolicy: () => ({ status: 'unmanaged' }),
+}));
 jest.mock('@/lib/permissions', () => ({
   isNoSpeechError: jest.fn(() => false),
 }));

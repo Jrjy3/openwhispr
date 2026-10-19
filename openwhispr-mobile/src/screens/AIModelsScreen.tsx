@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { AppState, Platform, View } from 'react-native';
 import { router } from 'expo-router';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { SettingsRow, SettingsSection } from '@/components/ui/SettingsSection';
@@ -113,11 +113,19 @@ export default function AIModelsScreen(): React.JSX.Element {
         cancelled = true;
       };
     }
-    getLocalReasoningReadiness({ refresh: true }).then((readiness) => {
-      if (!cancelled) setLocalReadiness(readiness);
+    const check = (): void => {
+      getLocalReasoningReadiness({ refresh: true }).then((readiness) => {
+        if (!cancelled) setLocalReadiness(readiness);
+      });
+    };
+    check();
+    // Apple Intelligence is turned on, or finishes its model, outside the app.
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') check();
     });
     return () => {
       cancelled = true;
+      subscription.remove();
     };
   }, [localIntelligenceEnabled]);
 

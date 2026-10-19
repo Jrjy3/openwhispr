@@ -47,7 +47,7 @@ export interface UserConfig {
   // Apple Foundation Models local generation for notes. Default on; users can
   // disable it from AI Models.
   appleLocalIntelligenceEnabled?: boolean;
-  // Dictation agent (cloud-only, default on)
+  // Voice assistant: "Hey <name>" dictation commands and keyboard compose (default on)
   dictationAgentEnabled?: boolean;
   // Note chat, which once shared dictationAgentEnabled's switch (saved apart by noteChatSplitConfig).
   noteChatEnabled?: boolean;

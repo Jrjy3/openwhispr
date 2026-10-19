@@ -9,6 +9,7 @@ jest.mock('@/store/useConfigStore', () => ({
     selector({ config: null, updateConfig: jest.fn() }),
 }));
 jest.mock('@/hooks/useConfigToggle', () => ({ useConfigToggle: () => jest.fn() }));
+jest.mock('@/hooks/useOnDeviceUnsupported', () => ({ useOnDeviceUnsupported: () => null }));
 jest.mock('../../../modules/live-activity/src', () => ({
   LiveActivity: { isDictationModeEnabled: () => false, setDictationMode: jest.fn() },
 }));
@@ -60,7 +61,7 @@ it('names the voice assistant throughout its settings screen', () => {
   render(<DictationAgentScreen />);
   expect(screen.getByText('Enable Voice Assistant')).toBeTruthy();
   expect(screen.getByText('Assistant Name')).toBeTruthy();
-  expect(screen.getByText(/In Local Mode it runs on Apple Intelligence/)).toBeTruthy();
+  expect(screen.getByText(/In Local Mode these commands run on Apple Intelligence/)).toBeTruthy();
   expect(screen.queryByText(/agent/i)).toBeNull();
 });
 

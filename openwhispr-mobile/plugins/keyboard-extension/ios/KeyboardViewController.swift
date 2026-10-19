@@ -3064,11 +3064,12 @@ final class KeyboardViewController: UIInputViewController, UIGestureRecognizerDe
     let provider = KeyboardHandoffProvider.shared
     guard provider.isAgentEnabled() else { return }
 
-    // Not applicable ⇒ Private mode is on. Point at it, swallow the tap.
+    // Not applicable ⇒ Local Mode is on, which has no on-device compose yet. Point at it, swallow
+    // the tap; dictated "Hey <name>" commands still run.
     guard provider.isAgentApplicable() else {
       playKeyClick()
       showTransientRecordState(
-        title: "Off in Local Mode",
+        title: "Compose is off in Local Mode",
         systemImage: "lock.fill",
         background: Palette.issue,
         duration: 1.6

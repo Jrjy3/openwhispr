@@ -37,7 +37,8 @@ export const LOCAL_MODE_DICTATION_NOTES = {
 export const ON_DEVICE_MODE_NOTES: Partial<Record<MobileInferenceScope, string>> = {
   notes: 'Local Mode formats notes on this iPhone and asks before sending one to your choice here.',
   noteChat: 'In Local Mode note chat asks before sending a note off this iPhone.',
-  agent: 'In Local Mode the voice assistant runs on Apple Intelligence on this iPhone.',
+  agent:
+    'In Local Mode the voice assistant runs on Apple Intelligence on this iPhone. What you pick here applies once Local Mode is off.',
 };
 
 // Local Mode dictates on this iPhone, so cleaning with OpenWhispr Cloud is a separate Cloud pass,
@@ -94,8 +95,8 @@ export function parseWorkflow(value: unknown): MobileInferenceScope | null {
   return WORKFLOWS.find((scope) => scope === value) ?? null;
 }
 
-// What a workflow with no saved selection runs. Local Mode keeps dictation and note formatting on
-// this iPhone, and uses OpenWhispr Cloud for uploads and cleanup when the account can, else this
+// What a workflow with no saved selection runs. Local Mode keeps dictation, note formatting and the
+// voice assistant on this iPhone, and uses OpenWhispr Cloud for uploads and cleanup when the account can, else this
 // iPhone. Note chat uses OpenWhispr Cloud when unset in every mode, and Bring Your Own Key
 // dictation waits for a provider before cleanup or the agent.
 export function unsetSelection(

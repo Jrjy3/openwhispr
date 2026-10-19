@@ -6,6 +6,7 @@ import { SettingsRow, SettingsSection } from '@/components/ui/SettingsSection';
 import { SettingsSwitch } from '@/components/ui/SettingsSwitch';
 import { useConfigStore } from '@/store/useConfigStore';
 import { useConfigToggle } from '@/hooks/useConfigToggle';
+import { useOnDeviceUnsupported } from '@/hooks/useOnDeviceUnsupported';
 import { useProcessingModeStore } from '@/store/useProcessingModeStore';
 import { getDictationAgentName, isDictationAgentEnabled } from '@/lib/dictationAgent';
 import { safeHaptics } from '@/lib/utils';
@@ -20,12 +21,17 @@ export function DictationAgentScreen(): React.JSX.Element {
   const activeMode = useProcessingModeStore((state) => state.activeMode);
 
   const agentSelected = !!config?.inference?.agent;
+  const privateMode = activeMode === 'private';
+  // Local Mode runs the assistant on Apple Intelligence, which some iPhones can never run.
+  const onDeviceUnsupported = useOnDeviceUnsupported(!privateMode);
   // Bring Your Own Key skips the assistant until it has a selection of its own.
   const unavailableNotice =
-    activeMode === 'providers' && !agentSelected
-      ? 'Bring Your Own Key skips the voice assistant until you choose a provider for it in AI Models. Your settings are saved and apply once you do.'
-      : null;
-  const isAvailable = !unavailableNotice;
+    privateMode && onDeviceUnsupported
+      ? `${onDeviceUnsupported} Your settings are saved and apply once Local Mode is off.`
+      : activeMode === 'providers' && !agentSelected
+        ? 'Bring Your Own Key skips the voice assistant until you choose a provider for it in AI Models. Your settings are saved and apply once you do.'
+        : null;
+  const isAvailable = !unavailableNotice && !(privateMode && onDeviceUnsupported === undefined);
   const enabled = config ? isDictationAgentEnabled(config) : true;
   const shareContext = config?.dictationAgentShareContext ?? false;
   const currentName = config ? getDictationAgentName(config) : DEFAULT_AGENT_NAME;
@@ -57,8 +63,9 @@ export function DictationAgentScreen(): React.JSX.Element {
         <View className="mx-4 mb-2 px-4">
           <Text className="text-[13px] text-secondaryLabel">
             When you say your assistant’s name while dictating, OpenWhispr rewrites what you said
-            into polished, ready-to-use text instead of inserting it word for word. In Local Mode it
-            runs on Apple Intelligence on this iPhone.
+            into polished, ready-to-use text instead of inserting it word for word. In Local Mode
+            these commands run on Apple Intelligence on this iPhone, and the keyboard’s compose is
+            off.
           </Text>
         </View>
 
@@ -124,12 +131,16 @@ export function DictationAgentScreen(): React.JSX.Element {
             icon="text.cursor"
             mdIcon="TextCursor"
             title="Share Cursor Context"
-            description="Selected text is always sent when you use the voice assistant. When on, the surrounding text near your cursor is also sent. Off by default."
+            description={
+              privateMode
+                ? 'Used by the keyboard’s compose, which is off in Local Mode.'
+                : 'Selected text is always sent when you use the voice assistant. When on, the surrounding text near your cursor is also sent. Off by default.'
+            }
             rightElement={
               <SettingsSwitch
                 value={shareContext}
                 onValueChange={handleToggleShareContext}
-                disabled={!isAvailable}
+                disabled={!isAvailable || privateMode}
               />
             }
             showChevron={false}

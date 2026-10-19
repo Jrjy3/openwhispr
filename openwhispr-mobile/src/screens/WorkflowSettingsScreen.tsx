@@ -16,6 +16,7 @@ import { confirmDestructive } from '@/lib/alerts';
 import { SettingsSwitch } from '@/components/ui/SettingsSwitch';
 import { OnDeviceModelSection } from '@/components/settings/OnDeviceModelSection';
 import { useConfigToggle } from '@/hooks/useConfigToggle';
+import { useOnDeviceUnsupported } from '@/hooks/useOnDeviceUnsupported';
 import { useCustomPromptsStore } from '@/store/useCustomPromptsStore';
 import { resolveCustomPrompt } from '@/config/prompts/registry';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -52,11 +53,6 @@ import { safeHaptics } from '@/lib/utils';
 import { SystemIcon, type LucideIconName } from '@/components/ui/SystemIcon';
 import { switchWorkflowMode } from '@/lib/workflowModeSwitch';
 import { getPrivateModeReadiness } from '@/lib/privateMode';
-import {
-  getLocalReasoningReadiness,
-  getLocalReasoningUnavailableMessage,
-  isLocalReasoningUnsupported,
-} from '@/lib/localReasoning';
 import {
   discoverProviderModels,
   testProviderConnection,
@@ -194,13 +190,13 @@ function NoteChatSettings({ enabled }: { enabled: boolean }): React.JSX.Element 
 }
 
 // Local Mode runs the voice assistant on Apple Intelligence, so it is locked off only on an iPhone
-// that can never run it (onDeviceUnsupported says why).
+// that can never run it (onDeviceUnsupported says why, undefined while still checking).
 function VoiceAssistantSettings({
   enabled,
   onDeviceUnsupported,
 }: {
   enabled: boolean;
-  onDeviceUnsupported: string | null;
+  onDeviceUnsupported: string | null | undefined;
 }): React.JSX.Element {
   const updateConfig = useConfigStore((state) => state.updateConfig);
   const agentName = useConfigStore((state) =>
@@ -216,7 +212,7 @@ function VoiceAssistantSettings({
       icon="person.wave.2"
       mdIcon="UserRoundCog"
       enabled={enabled && !lockedReason}
-      disabled={!!lockedReason}
+      disabled={lockedReason !== null}
       onToggle={(value) => {
         safeHaptics('light');
         void updateConfig({ dictationAgentEnabled: value });
@@ -329,24 +325,8 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
   const models = provider?.models.length ? provider.models : discoveredModels;
   const speechScope = scope === 'dictation' || scope === 'upload' ? scope : null;
   // On-Device text workflows run on Apple Intelligence, which some iPhones can never run.
-  const [onDeviceUnsupported, setOnDeviceUnsupported] = useState<string | null>(null);
-  useEffect(() => {
-    if (speechScope) return undefined;
-    let cancelled = false;
-    getLocalReasoningReadiness()
-      .then((readiness) => {
-        if (cancelled) return;
-        setOnDeviceUnsupported(
-          isLocalReasoningUnsupported(readiness)
-            ? getLocalReasoningUnavailableMessage(readiness)
-            : null,
-        );
-      })
-      .catch(() => undefined);
-    return (): void => {
-      cancelled = true;
-    };
-  }, [speechScope]);
+  const onDeviceCheck = useOnDeviceUnsupported(!!speechScope);
+  const onDeviceUnsupported = onDeviceCheck ?? null;
   // Nothing is shown as picked when the On-Device text workflow can never run on this iPhone.
   const pickedMode =
     !speechScope && onDeviceUnsupported && selection.mode === 'local' ? null : selection.mode;
@@ -377,7 +357,10 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
   // Keys are stored per provider (per server for Custom), so every workflow on it shares one.
   const keyOwner =
     provider?.id === 'custom' ? 'this server' : providerDisplayName(provider?.id ?? '');
-  const workflowOff = workflowSwitchedOff(config, scope);
+  // Local Mode can't run the voice assistant on an iPhone without Apple Intelligence.
+  const workflowOff =
+    workflowSwitchedOff(config, scope) ||
+    (scope === 'agent' && activeMode === 'private' && !!onDeviceUnsupported);
   // A switched-off workflow uses no key, nor does the voice assistant in Local Mode.
   const usesKey = (workflow: MobileInferenceScope): boolean =>
     !workflowSwitchedOff(config, workflow) && !(activeMode === 'private' && workflow === 'agent');
@@ -752,10 +735,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         {scope === 'cleanup' ? <CleanupSettings enabled={!workflowOff} /> : null}
         {scope === 'noteChat' ? <NoteChatSettings enabled={!workflowOff} /> : null}
         {scope === 'agent' ? (
-          <VoiceAssistantSettings
-            enabled={!workflowOff}
-            onDeviceUnsupported={onDeviceUnsupported}
-          />
+          <VoiceAssistantSettings enabled={!workflowOff} onDeviceUnsupported={onDeviceCheck} />
         ) : null}
         {workflowOff ? null : (
           <>

@@ -228,6 +228,21 @@ it.each([
   expect(snapshot.agentRoute).toEqual({ mode: 'local', scope: 'agent' });
 });
 
+// Local Mode keeps the voice assistant on this phone whatever is saved for it.
+it.each([
+  ['nothing', undefined],
+  ['OpenWhispr Cloud', { mode: 'openwhispr' }],
+  ['a provider', OPENAI_TEXT],
+])('keeps a Local Mode command on this iPhone with %s saved for it', (_label, agent) => {
+  mockProcessing.activeMode = 'private';
+  mockUser = { id: 'u', isAnonymous: false };
+  mockState.config.inference = { dictation: { mode: 'local' }, agent };
+  expect(snapshotTranscriptionJob('dictation').agentRoute).toEqual({
+    mode: 'local',
+    scope: 'agent',
+  });
+});
+
 // With nothing saved, Local Mode cleans on OpenWhispr Cloud only for a signed-in account.
 it.each([
   ['a signed-in account', { id: 'u', isAnonymous: false }, 'openwhispr'],

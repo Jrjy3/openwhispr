@@ -1,3 +1,4 @@
+import type { InferenceMode } from '@/lib/mobileProviders';
 import type { ProcessingMode, UserConfig } from '@/types';
 
 const DEFAULT_AGENT_NAME = 'OpenWhispr';
@@ -11,9 +12,28 @@ export function isDictationAgentEnabled(config: UserConfig): boolean {
   return config.dictationAgentEnabled ?? true;
 }
 
-// Dictation commands run in every mode; in Local Mode on Apple Intelligence.
-export function isDictationAgentApplicable(_mode: ProcessingMode, config: UserConfig): boolean {
-  return isDictationAgentEnabled(config);
+// Whether "Hey <name>" commands run for a dictation whose voice assistant runs in agentMode. An org
+// that turns the assistant off is honoured on this iPhone from its last fetched policy, without a
+// network call. Local Mode runs commands only on Apple Intelligence: a recording sent to Cloud with
+// consent is cleaned there rather than run as a command, and an iPhone that can never run Apple
+// Intelligence runs none.
+export async function runsDictationCommands(
+  config: UserConfig,
+  activeMode: ProcessingMode,
+  agentMode: InferenceMode | undefined,
+): Promise<boolean> {
+  if (!isDictationAgentEnabled(config)) return false;
+  if (agentMode === 'local') {
+    const { getCachedProviderPolicy } =
+      require('@/services/providers/ProviderPolicy') as typeof import('@/services/providers/ProviderPolicy');
+    const policy = getCachedProviderPolicy();
+    if (policy.status === 'managed' && policy.agentEnabled === false) return false;
+  }
+  if (activeMode !== 'private') return true;
+  if (agentMode !== 'local') return false;
+  const { getLocalReasoningReadiness, isLocalReasoningUnsupported } =
+    require('@/lib/localReasoning') as typeof import('@/lib/localReasoning');
+  return !isLocalReasoningUnsupported(await getLocalReasoningReadiness());
 }
 
 // The keyboard's compose has no on-device version yet, so Local Mode keeps it off.

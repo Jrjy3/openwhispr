@@ -1,11 +1,22 @@
 import {
   getDictationAgentName,
-  isDictationAgentApplicable,
+  runsDictationCommands,
+  isDictationAgentEnabled,
   isKeyboardComposeApplicable,
   isNoteChatEnabled,
   detectAgentMention,
 } from '@/lib/dictationAgent';
 import type { UserConfig } from '@/types';
+
+let mockPolicy: Record<string, unknown> = { status: 'unmanaged' };
+const mockReadiness = jest.fn();
+jest.mock('@/services/providers/ProviderPolicy', () => ({
+  getCachedProviderPolicy: () => mockPolicy,
+}));
+jest.mock('@/lib/localReasoning', () => ({
+  ...jest.requireActual('@/lib/localReasoning'),
+  getLocalReasoningReadiness: () => mockReadiness(),
+}));
 
 const baseConfig: UserConfig = { defaultMode: 'cloud' };
 
@@ -27,34 +38,66 @@ describe('getDictationAgentName', () => {
   });
 });
 
-describe('isDictationAgentApplicable', () => {
-  it('returns true when cloud mode and agent enabled', () => {
-    expect(
-      isDictationAgentApplicable('cloud', { ...baseConfig, dictationAgentEnabled: true }),
-    ).toBe(true);
+// Where commands run in each mode is runsDictationCommands' call, below.
+describe('isDictationAgentEnabled', () => {
+  it('is on by default', () => {
+    expect(isDictationAgentEnabled(baseConfig)).toBe(true);
   });
 
-  it('returns false when cloud mode but agent disabled', () => {
-    expect(
-      isDictationAgentApplicable('cloud', { ...baseConfig, dictationAgentEnabled: false }),
-    ).toBe(false);
+  it('follows its switch', () => {
+    expect(isDictationAgentEnabled({ ...baseConfig, dictationAgentEnabled: false })).toBe(false);
+    expect(isDictationAgentEnabled({ ...baseConfig, dictationAgentEnabled: true })).toBe(true);
+  });
+});
+
+describe('runsDictationCommands', () => {
+  const orgOff = {
+    status: 'managed',
+    transcription: { allowedModes: ['local'], allowedByokProviders: [] },
+    llm: { allowedModes: ['local'], allowedByokProviders: [] },
+    agentEnabled: false,
+  };
+
+  beforeEach(() => {
+    mockPolicy = { status: 'unmanaged' };
+    mockReadiness.mockResolvedValue({ status: 'ready', tokenCounting: false });
   });
 
-  it('returns true when cloud mode and agent not set (default on)', () => {
-    expect(isDictationAgentApplicable('cloud', baseConfig)).toBe(true);
+  it('runs none with the voice assistant switched off', async () => {
+    const off = { ...baseConfig, dictationAgentEnabled: false };
+    await expect(runsDictationCommands(off, 'cloud', 'openwhispr')).resolves.toBe(false);
+    await expect(runsDictationCommands(off, 'private', 'local')).resolves.toBe(false);
   });
 
-  it('returns false when cloud mode but agent explicitly disabled', () => {
-    expect(
-      isDictationAgentApplicable('cloud', { ...baseConfig, dictationAgentEnabled: false }),
-    ).toBe(false);
+  it.each(['openwhispr', 'providers', 'local', undefined] as const)(
+    'runs them outside Local Mode on a %s route',
+    async (route) => {
+      await expect(runsDictationCommands(baseConfig, 'cloud', route)).resolves.toBe(true);
+    },
+  );
+
+  it('runs them in Local Mode only on this iPhone', async () => {
+    await expect(runsDictationCommands(baseConfig, 'private', 'local')).resolves.toBe(true);
+    await expect(runsDictationCommands(baseConfig, 'private', 'openwhispr')).resolves.toBe(false);
+    await expect(runsDictationCommands(baseConfig, 'private', 'providers')).resolves.toBe(false);
+    await expect(runsDictationCommands(baseConfig, 'private', undefined)).resolves.toBe(false);
   });
 
-  // Local Mode runs dictation commands on Apple Intelligence.
-  it('returns true in Local Mode when agent enabled', () => {
-    expect(
-      isDictationAgentApplicable('private', { ...baseConfig, dictationAgentEnabled: true }),
-    ).toBe(true);
+  it('runs none in Local Mode on an iPhone that can never run Apple Intelligence', async () => {
+    mockReadiness.mockResolvedValue({ status: 'unsupportedDevice', tokenCounting: false });
+    await expect(runsDictationCommands(baseConfig, 'private', 'local')).resolves.toBe(false);
+  });
+
+  // Off or still downloading can be fixed, so the command runs into a reason the user can act on.
+  it('still runs them in Local Mode while Apple Intelligence is only off', async () => {
+    mockReadiness.mockResolvedValue({ status: 'appleIntelligenceOff', tokenCounting: false });
+    await expect(runsDictationCommands(baseConfig, 'private', 'local')).resolves.toBe(true);
+  });
+
+  it('honours an org that turned the voice assistant off, on this iPhone', async () => {
+    mockPolicy = orgOff;
+    await expect(runsDictationCommands(baseConfig, 'private', 'local')).resolves.toBe(false);
+    await expect(runsDictationCommands(baseConfig, 'cloud', 'local')).resolves.toBe(false);
   });
 });
 
@@ -181,5 +224,5 @@ describe('detectAgentMention — edge cases', () => {
 });
 
 it('supports Providers mode', () => {
-  expect(isDictationAgentApplicable('providers', { defaultMode: 'providers' })).toBe(true);
+  expect(isKeyboardComposeApplicable('providers', { defaultMode: 'providers' })).toBe(true);
 });

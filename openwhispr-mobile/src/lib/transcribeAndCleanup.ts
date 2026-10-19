@@ -13,11 +13,7 @@ import { useSnippetsStore } from '@/store/useSnippetsStore';
 import { requiresRealAccount } from './accountAccess';
 import { cleanupRunsOnDevice } from './aiWorkflows';
 import { cleanupTranscript, AGENT_ACTION_TIMEOUT_MS } from './cleanupTranscript';
-import {
-  getDictationAgentName,
-  isDictationAgentApplicable,
-  detectAgentMention,
-} from './dictationAgent';
+import { getDictationAgentName, detectAgentMention, runsDictationCommands } from './dictationAgent';
 import { isDictationContext } from './dictationHints';
 import { isToneApplicable } from './keyboardTone';
 import { getLocalReasoningReadiness } from './localReasoning';
@@ -75,25 +71,28 @@ function cleansLocalTranscript(request: TranscriptionRequest): boolean {
   );
 }
 
-// Local Mode cleans On-Device with nothing of its own saved for cleanup: unset, or held there
-// automatically (pinnedInference). When Apple Intelligence can't run, AI Models already says that
-// cleanup is skipped, so it is skipped quietly rather than warning on every transcript the user
-// never asked to clean. The cached readiness outlives a fix in iOS Settings, so it is checked again
-// before skipping.
 // Whether a Local Mode dictation addresses the voice assistant by name ("Hey <name> …"). Cleanup
 // switched off turns the assistant off too, as cleanupTranscript returns before looking for it.
-function addressesVoiceAssistant(text: string, request: TranscriptionRequest): boolean {
+async function addressesVoiceAssistant(
+  text: string,
+  request: TranscriptionRequest,
+): Promise<boolean> {
   const config = useConfigStore.getState().config;
   if (!config || !(config.cleanupEnabled ?? true)) return false;
   if (!isDictationContext(request.requestContext)) return false;
   const { activeMode } = useProcessingModeStore.getState();
   return (
     activeMode === 'private' &&
-    isDictationAgentApplicable(activeMode, config) &&
-    detectAgentMention(text, getDictationAgentName(config))
+    detectAgentMention(text, getDictationAgentName(config)) &&
+    (await runsDictationCommands(config, activeMode, request.agentRoute?.mode))
   );
 }
 
+// Local Mode cleans On-Device with nothing of its own saved for cleanup: unset, or held there
+// automatically (pinnedInference). When Apple Intelligence can't run, AI Models already says that
+// cleanup is skipped, so it is skipped quietly rather than warning on every transcript the user
+// never asked to clean. The cached readiness outlives a fix in iOS Settings, so it is checked again
+// before skipping.
 async function skipsLocalModeCleanup(request: TranscriptionRequest): Promise<boolean> {
   if (request.cleanupRoute?.mode !== 'local') return false;
   const config = useConfigStore.getState().config;
@@ -228,7 +227,7 @@ async function runSerialTranscribeAndCleanup(
 
   // A spoken command goes to the voice assistant even where cleanup would be skipped, and is told
   // why when Apple Intelligence can't run it (cleanupTranscript).
-  const addressed = addressesVoiceAssistant(originalText, request);
+  const addressed = await addressesVoiceAssistant(originalText, request);
 
   // A transcript made on this iPhone leaves it only for the cleanup route pinned for it;
   // otherwise it is cleaned by On-Device cleanup or not at all.
@@ -294,10 +293,16 @@ async function maybeRunAgentActionOnFusedResult(
 
   const cfg = useConfigStore.getState().config;
   const activeMode = useProcessingModeStore.getState().activeMode;
-  if (!isDictationAgentApplicable(activeMode, cfg ?? { defaultMode: activeMode })) return undefined;
-
   const agentName = getDictationAgentName(cfg ?? { defaultMode: activeMode });
   if (!detectAgentMention(rawText, agentName)) return undefined;
+  if (
+    !(await runsDictationCommands(
+      cfg ?? { defaultMode: activeMode },
+      activeMode,
+      request.agentRoute?.mode,
+    ))
+  )
+    return undefined;
 
   try {
     if (request.agentUnavailable) {

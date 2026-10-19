@@ -6,11 +6,18 @@
 import { TranscriptionService } from '@/services/transcription/TranscriptionService';
 import { transcribeAndCleanup } from '@/lib/transcribeAndCleanup';
 import { ReasoningService } from '@/services/reasoning/ReasoningService';
-import { countLocalReasoningTokens, getLocalReasoningReadiness } from '@/lib/localReasoning';
+import {
+  countLocalReasoningTokens,
+  getLocalReasoningReadiness,
+  getLocalReasoningUnavailableMessage,
+} from '@/lib/localReasoning';
+import { snapshotTextInference } from '@/lib/inferenceRouting';
+import type { TranscriptionProvider, TranscriptionRequest } from '@/types';
 
 let mockConfig: Record<string, unknown> = {};
 let mockActiveMode = 'private';
 let mockCustomPrompt: string | undefined;
+let mockCachedPolicy: Record<string, unknown> = { status: 'unmanaged' };
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('@/services/transcription/TranscriptionService', () => ({
@@ -35,6 +42,10 @@ jest.mock('@/lib/localReasoning', () => ({
   ...jest.requireActual('@/lib/localReasoning'),
   getLocalReasoningReadiness: jest.fn(),
   countLocalReasoningTokens: jest.fn(),
+}));
+jest.mock('@/services/providers/ProviderPolicy', () => ({
+  getCachedProviderPolicy: () => mockCachedPolicy,
+  getProviderPolicy: async () => mockCachedPolicy,
 }));
 jest.mock('@/lib/permissions', () => ({
   isNoSpeechError: jest.fn(() => false),
@@ -64,15 +75,31 @@ const mockReason = ReasoningService.processText as jest.Mock;
 const mockReadiness = getLocalReasoningReadiness as jest.Mock;
 const mockCountTokens = countLocalReasoningTokens as jest.Mock;
 
-function dictateOnDevice(text: string): ReturnType<typeof transcribeAndCleanup> {
-  mockTranscribe.mockResolvedValue({ text, provider: 'local', duration: 1 });
+// Routes are snapshotted the way a recording snapshots them, so these tests cover where Local Mode
+// sends a command, not a route handed in by the test.
+function dictate(
+  text: string,
+  provider: TranscriptionProvider = 'local',
+  extra: Partial<TranscriptionRequest> = {},
+): ReturnType<typeof transcribeAndCleanup> {
+  mockTranscribe.mockResolvedValue({ text, provider, duration: 1 });
   return transcribeAndCleanup({
     audioUri: 'file://a.wav',
-    provider: 'local',
+    provider,
     requestContext: 'recording',
-    cleanupRoute: { mode: 'local', scope: 'cleanup' },
-    agentRoute: { mode: 'local', scope: 'agent' },
+    ...snapshotTextInference(provider),
+    ...extra,
   });
+}
+
+function dictateOnDevice(text: string): ReturnType<typeof transcribeAndCleanup> {
+  return dictate(text);
+}
+
+function agentCall(): Record<string, unknown> | undefined {
+  return mockReason.mock.calls
+    .map((call) => call[0] as Record<string, unknown>)
+    .find((request) => request.inferenceScope === 'agent');
 }
 
 function scopesCalled(): unknown[] {
@@ -91,6 +118,82 @@ beforeEach(() => {
   mockReadiness.mockResolvedValue({ status: 'ready', tokenCounting: true });
   mockCountTokens.mockResolvedValue(null);
   mockCustomPrompt = undefined;
+  mockCachedPolicy = { status: 'unmanaged' };
+});
+
+const groq = { mode: 'providers', providerId: 'groq', modelId: 'openai/gpt-oss-20b' };
+
+it.each([
+  ['nothing saved', undefined],
+  ['OpenWhispr Cloud saved', { mode: 'openwhispr' }],
+  ['Bring Your Own Key saved', groq],
+])('runs a command on this iPhone with %s for the voice assistant', async (_label, agent) => {
+  mockConfig = {
+    ...mockConfig,
+    inference: { dictation: { mode: 'local' }, cleanup: { mode: 'local' }, agent },
+  };
+
+  await dictateOnDevice('Hey OpenWhispr write a haiku');
+
+  expect(scopesCalled()).toEqual(['agent']);
+  expect(agentCall()?.inferenceRoute).toEqual({ mode: 'local', scope: 'agent' });
+});
+
+it('runs a command dictated from the keyboard on this iPhone', async () => {
+  await dictate('Hey OpenWhispr write a haiku', 'local', { requestContext: 'keyboard' });
+
+  expect(agentCall()?.inferenceRoute).toEqual({ mode: 'local', scope: 'agent' });
+});
+
+// "Use Cloud Once" sends one recording to Cloud with consent; it is cleaned there as before, never
+// run as a command off this iPhone.
+it.each([
+  ['cleaned separately', false],
+  ['cleaned while transcribing', true],
+])('runs no command on a recording sent to Cloud once (%s)', async (_label, fused) => {
+  mockUser = { id: 'u', isAnonymous: false };
+  mockTranscribe.mockResolvedValue({
+    text: 'Hey OpenWhispr write a haiku',
+    provider: 'cloud',
+    duration: 1,
+    ...(fused ? { cleanupApplied: true } : {}),
+  });
+
+  await transcribeAndCleanup({
+    audioUri: 'file://a.wav',
+    provider: 'cloud',
+    requestContext: 'recording',
+    ...snapshotTextInference('cloud'),
+  });
+
+  expect(agentCall()).toBeUndefined();
+});
+
+it('cleans an addressed dictation on an iPhone that can never run Apple Intelligence', async () => {
+  mockUser = { id: 'u', isAnonymous: false };
+  mockConfig = {
+    ...mockConfig,
+    inference: { dictation: { mode: 'local' }, cleanup: { mode: 'openwhispr' } },
+  };
+  mockReadiness.mockResolvedValue({ status: 'unsupportedDevice', tokenCounting: false });
+
+  const result = await dictateOnDevice('Hey OpenWhispr write a haiku');
+
+  expect(scopesCalled()).toEqual(['cleanup']);
+  expect(result.transcription.cleanupWarning).toBeUndefined();
+});
+
+it('cleans an addressed dictation when the organization turned the voice assistant off', async () => {
+  mockCachedPolicy = {
+    status: 'managed',
+    transcription: { allowedModes: ['local'], allowedByokProviders: [] },
+    llm: { allowedModes: ['local'], allowedByokProviders: [] },
+    agentEnabled: false,
+  };
+
+  await dictateOnDevice('Hey OpenWhispr write a haiku');
+
+  expect(scopesCalled()).toEqual(['cleanup']);
 });
 
 it('runs a command when Local Mode saves Cloud cleanup without an account', async () => {
@@ -102,6 +205,7 @@ it('runs a command when Local Mode saves Cloud cleanup without an account', asyn
   await dictateOnDevice('Hey OpenWhispr write a haiku');
 
   expect(scopesCalled()).toEqual(['agent']);
+  expect(agentCall()?.inferenceRoute).toEqual({ mode: 'local', scope: 'agent' });
 });
 
 it("says why a command can't run while Apple Intelligence is off", async () => {
@@ -112,7 +216,9 @@ it("says why a command can't run while Apple Intelligence is off", async () => {
 
   expect(mockReason).not.toHaveBeenCalled();
   expect(result.text).toBe('Hey OpenWhispr write a haiku');
-  expect(result.transcription.cleanupWarning).toContain('Your raw transcript is saved.');
+  expect(result.transcription.cleanupWarning).toBe(
+    `${getLocalReasoningUnavailableMessage({ status: 'appleIntelligenceOff', tokenCounting: false })} Your raw transcript is saved.`,
+  );
 });
 
 it('cleans a dictation that only mentions the name', async () => {

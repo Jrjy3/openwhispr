@@ -248,13 +248,25 @@ async function fetchPolicy(identity: PolicyIdentity): Promise<InferencePolicy> {
   }
 }
 
+// Guests and the signed-out keep the last managed account's policy, as does an anonymous session
+// that remembers one; null means the signed-in account's own policy applies.
+function accountlessPolicy(current: AuthState): InferencePolicy | null {
+  if (current.isGuest || !current.user) return signedOutPolicy() ?? { status: 'unmanaged' };
+  return current.user.isAnonymous ? signedOutPolicy() : null;
+}
+
+// The policy as last fetched, without a network call, for work that stays on this iPhone.
+export function getCachedProviderPolicy(): InferencePolicy {
+  const current = useAuthStore.getState();
+  const accountless = accountlessPolicy(current);
+  if (accountless || !current.user) return accountless ?? { status: 'unmanaged' };
+  return fallbackPolicy(current.user.id);
+}
+
 export async function getProviderPolicy(): Promise<InferencePolicy> {
   const current = useAuthStore.getState();
-  if (current.isGuest || !current.user) return signedOutPolicy() ?? { status: 'unmanaged' };
-  if (current.user.isAnonymous) {
-    const remembered = signedOutPolicy();
-    if (remembered) return remembered;
-  }
+  const accountless = accountlessPolicy(current);
+  if (accountless || !current.user) return accountless ?? { status: 'unmanaged' };
   const identity: PolicyIdentity = {
     accountId: current.user.id,
     user: current.user,
