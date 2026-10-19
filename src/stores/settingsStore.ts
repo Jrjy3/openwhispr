@@ -853,7 +853,13 @@ function migrateRetiredCloudModels() {
   if (!isBrowser) return;
   const swept = sweepRetiredCloudModelSelections(
     localStorage,
-    Object.values(INFERENCE_SCOPES).map(({ storeKeys }) => storeKeys)
+    Object.values(INFERENCE_SCOPES)
+      .map(({ storeKeys }) => storeKeys)
+      .filter(({ mode }) => {
+        const storedMode = localStorage.getItem(mode);
+        // Profiles predating scope modes still need the legacy migration.
+        return !storedMode || storedMode === "providers" || storedMode === "openwhispr";
+      })
   );
   if (swept.length === 0) return;
 
@@ -3215,6 +3221,9 @@ export async function reconcileLocalModelSelections(): Promise<void> {
 export function reconcileRetiredCloudModelSelections(): void {
   const state = useSettingsStore.getState() as unknown as Record<string, unknown>;
   for (const scope of Object.values(INFERENCE_SCOPES)) {
+    const mode = state[scope.storeKeys.mode];
+    // Self-hosted, local and enterprise modes can retain an old cloud provider.
+    if (mode !== "providers" && mode !== "openwhispr") continue;
     const provider = state[scope.storeKeys.provider] as string;
     const model = state[scope.storeKeys.model] as string;
     if (!provider || !model || provider === "tinfoil") continue;

@@ -67,7 +67,8 @@ function reconcileSelectedModels(
   const announced = new Set<string>();
 
   for (const scope of Object.values(INFERENCE_SCOPES)) {
-    const { provider, model } = scope.storeKeys;
+    const { mode, provider, model } = scope.storeKeys;
+    if (settings[mode] !== "providers" && settings[mode] !== "openwhispr") continue;
     if (settings[provider] !== "tinfoil") continue;
 
     const selected = settings[model];
