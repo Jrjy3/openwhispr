@@ -11,7 +11,13 @@ export function isDictationAgentEnabled(config: UserConfig): boolean {
   return config.dictationAgentEnabled ?? true;
 }
 
-export function isDictationAgentApplicable(mode: ProcessingMode, config: UserConfig): boolean {
+// Dictation commands run in every mode; in Local Mode on Apple Intelligence.
+export function isDictationAgentApplicable(_mode: ProcessingMode, config: UserConfig): boolean {
+  return isDictationAgentEnabled(config);
+}
+
+// The keyboard's compose has no on-device version yet, so Local Mode keeps it off.
+export function isKeyboardComposeApplicable(mode: ProcessingMode, config: UserConfig): boolean {
   return (mode === 'cloud' || mode === 'providers') && isDictationAgentEnabled(config);
 }
 

@@ -3,8 +3,8 @@ import type { KeyboardTone } from '@/types';
 import { DEFAULT_KEYBOARD_TONE } from '@/lib/keyboardTone';
 import {
   getDictationAgentName,
-  isDictationAgentApplicable,
   isDictationAgentEnabled,
+  isKeyboardComposeApplicable,
 } from '@/lib/dictationAgent';
 import { useConfigStore } from '@/store/useConfigStore';
 import { useProcessingModeStore } from '@/store/useProcessingModeStore';
@@ -66,7 +66,7 @@ function writeAgentMirrorKeys(): void {
   const mode = useProcessingModeStore.getState().activeMode;
 
   const enabled = isDictationAgentEnabled(config ?? { defaultMode: 'cloud' });
-  const applicable = isDictationAgentApplicable(mode, config ?? { defaultMode: 'cloud' });
+  const applicable = isKeyboardComposeApplicable(mode, config ?? { defaultMode: 'cloud' });
   const name = getDictationAgentName(config ?? { defaultMode: 'cloud' });
   const shareContext = config?.dictationAgentShareContext ?? false;
 

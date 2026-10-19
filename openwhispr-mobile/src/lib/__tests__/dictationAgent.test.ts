@@ -1,6 +1,7 @@
 import {
   getDictationAgentName,
   isDictationAgentApplicable,
+  isKeyboardComposeApplicable,
   isNoteChatEnabled,
   voiceAssistantToggleConfig,
   detectAgentMention,
@@ -50,9 +51,27 @@ describe('isDictationAgentApplicable', () => {
     ).toBe(false);
   });
 
-  it('returns false when private mode even if agent enabled', () => {
+  // Local Mode runs dictation commands on Apple Intelligence.
+  it('returns true in Local Mode when agent enabled', () => {
     expect(
       isDictationAgentApplicable('private', { ...baseConfig, dictationAgentEnabled: true }),
+    ).toBe(true);
+  });
+});
+
+// The keyboard's compose has no on-device version yet, so Local Mode keeps it off.
+describe('isKeyboardComposeApplicable', () => {
+  it.each(['cloud', 'providers'] as const)('is on in %s mode', (mode) => {
+    expect(isKeyboardComposeApplicable(mode, baseConfig)).toBe(true);
+  });
+
+  it('is off in Local Mode', () => {
+    expect(isKeyboardComposeApplicable('private', baseConfig)).toBe(false);
+  });
+
+  it('is off when the voice assistant is switched off', () => {
+    expect(
+      isKeyboardComposeApplicable('cloud', { ...baseConfig, dictationAgentEnabled: false }),
     ).toBe(false);
   });
 });

@@ -59,7 +59,8 @@ describe('buildDictationHints agentName', () => {
     expect(hints).not.toContain('Aria');
   });
 
-  it('excludes the agent name when mode is private', () => {
+  // Local Mode runs dictation commands too, so the name is a hint there as well.
+  it('includes the agent name in Local Mode', () => {
     mockActiveMode = 'private';
     mockConfig = {
       defaultMode: 'private',
@@ -68,7 +69,7 @@ describe('buildDictationHints agentName', () => {
     };
 
     const hints = buildDictationHints(false);
-    expect(hints).not.toContain('Aria');
+    expect(hints).toContain('Aria');
   });
 
   it('does not duplicate the agent name when it is already in the custom dictionary', () => {

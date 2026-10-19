@@ -83,9 +83,9 @@ describe('cleanupTranscript custom prompt — sent', () => {
     expect(req.agentName).toBeUndefined();
   });
 
-  it('still sends it in private mode, where the agent is never applicable', async () => {
+  it('still sends it in Local Mode while the voice assistant is off', async () => {
     mockActiveMode = 'private';
-    mockConfig = { cleanupEnabled: true, defaultMode: 'private', dictationAgentEnabled: true };
+    mockConfig = { cleanupEnabled: true, defaultMode: 'private', dictationAgentEnabled: false };
     await cleanupTranscript('hey OpenWhispr rewrite this', { context: 'keyboard' });
     const req = lastRequest();
     expect(req.customPrompt).toBe('Always use bullet points, {{agentName}}.');

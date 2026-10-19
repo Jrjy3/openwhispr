@@ -144,7 +144,8 @@ describe('cleanupTranscript agentName — feature disabled (regression guard)', 
     expect(req.agentName).toBeUndefined();
   });
 
-  it('does not pass agentName when mode is private', async () => {
+  // Local Mode runs dictation commands too, on Apple Intelligence.
+  it('passes agentName in Local Mode', async () => {
     mockActiveMode = 'private';
     mockConfig = {
       cleanupEnabled: true,
@@ -155,7 +156,7 @@ describe('cleanupTranscript agentName — feature disabled (regression guard)', 
     await cleanupTranscript('hey OpenWhispr do something', { context: 'keyboard' });
 
     const req = mockProcessText.mock.calls[0][0] as Record<string, unknown>;
-    expect(req.agentName).toBeUndefined();
+    expect(req.agentName).toBe('OpenWhispr');
   });
 });
 
