@@ -80,14 +80,15 @@ function cleansLocalTranscript(request: TranscriptionRequest): boolean {
 // cleanup is skipped, so it is skipped quietly rather than warning on every transcript the user
 // never asked to clean. The cached readiness outlives a fix in iOS Settings, so it is checked again
 // before skipping.
-// Whether a dictation addresses the voice assistant by name ("Hey <name> …"). Cleanup switched off
-// turns the assistant off too, as cleanupTranscript returns before looking for it.
+// Whether a Local Mode dictation addresses the voice assistant by name ("Hey <name> …"). Cleanup
+// switched off turns the assistant off too, as cleanupTranscript returns before looking for it.
 function addressesVoiceAssistant(text: string, request: TranscriptionRequest): boolean {
   const config = useConfigStore.getState().config;
   if (!config || !(config.cleanupEnabled ?? true)) return false;
   if (!isDictationContext(request.requestContext)) return false;
   const { activeMode } = useProcessingModeStore.getState();
   return (
+    activeMode === 'private' &&
     isDictationAgentApplicable(activeMode, config) &&
     detectAgentMention(text, getDictationAgentName(config))
   );

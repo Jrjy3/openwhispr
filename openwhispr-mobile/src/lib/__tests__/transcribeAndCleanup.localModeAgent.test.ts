@@ -139,3 +139,19 @@ it('keeps the transcript raw when cleanup is switched off', async () => {
   expect(mockReason).not.toHaveBeenCalled();
   expect(result.text).toBe('Hey OpenWhispr write a haiku');
 });
+
+// Outside Local Mode an on-device dictation keeps today's behaviour: where cleanup is skipped, the
+// transcript stays raw, and AI Models says why.
+it('keeps an addressed on-device dictation raw outside Local Mode when cleanup is skipped', async () => {
+  mockActiveMode = 'providers';
+  mockConfig = {
+    cleanupEnabled: true,
+    defaultMode: 'providers',
+    inference: { dictation: { mode: 'local' } },
+  };
+
+  const result = await dictateOnDevice('Hey OpenWhispr write a haiku');
+
+  expect(mockReason).not.toHaveBeenCalled();
+  expect(result.text).toBe('Hey OpenWhispr write a haiku');
+});
