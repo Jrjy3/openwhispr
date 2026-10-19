@@ -80,6 +80,19 @@ function cleansLocalTranscript(request: TranscriptionRequest): boolean {
 // cleanup is skipped, so it is skipped quietly rather than warning on every transcript the user
 // never asked to clean. The cached readiness outlives a fix in iOS Settings, so it is checked again
 // before skipping.
+// Whether a dictation addresses the voice assistant by name ("Hey <name> …"). Cleanup switched off
+// turns the assistant off too, as cleanupTranscript returns before looking for it.
+function addressesVoiceAssistant(text: string, request: TranscriptionRequest): boolean {
+  const config = useConfigStore.getState().config;
+  if (!config || !(config.cleanupEnabled ?? true)) return false;
+  if (!isDictationContext(request.requestContext)) return false;
+  const { activeMode } = useProcessingModeStore.getState();
+  return (
+    isDictationAgentApplicable(activeMode, config) &&
+    detectAgentMention(text, getDictationAgentName(config))
+  );
+}
+
 async function skipsLocalModeCleanup(request: TranscriptionRequest): Promise<boolean> {
   if (request.cleanupRoute?.mode !== 'local') return false;
   const config = useConfigStore.getState().config;
@@ -212,9 +225,13 @@ async function runSerialTranscribeAndCleanup(
   const originalText = transcription.text;
   lifecycle.onRawTranscript?.(originalText, transcription);
 
+  // A spoken command goes to the voice assistant even where cleanup would be skipped, and is told
+  // why when Apple Intelligence can't run it (cleanupTranscript).
+  const addressed = addressesVoiceAssistant(originalText, request);
+
   // A transcript made on this iPhone leaves it only for the cleanup route pinned for it;
   // otherwise it is cleaned by On-Device cleanup or not at all.
-  if (transcription.provider === 'local' && !cleansLocalTranscript(request)) {
+  if (transcription.provider === 'local' && !addressed && !cleansLocalTranscript(request)) {
     return rawTranscriptResult(transcription);
   }
 
@@ -223,7 +240,8 @@ async function runSerialTranscribeAndCleanup(
   if (lifecycle.shouldCancel?.()) {
     return rawTranscriptResult(transcription);
   }
-  if (await skipsLocalModeCleanup(request)) return rawTranscriptResult(transcription);
+  if (!addressed && (await skipsLocalModeCleanup(request)))
+    return rawTranscriptResult(transcription);
 
   let cleanupWarning: string | undefined;
   lifecycle.onStage?.('cleaning', { fusedCleanup: false });
