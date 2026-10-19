@@ -3370,6 +3370,7 @@
       "speakersIdentified": "已辨識發言者",
       "typeNamePlaceholder": "輸入姓名",
       "knownSpeakers": "已知發言者",
+      "thisIsMe": "這是我",
       "meetingAttendees": "會議參與者",
       "assignName": "指派姓名",
       "isThisPerson": "這是{{name}}嗎？",

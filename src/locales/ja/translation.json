@@ -3298,6 +3298,7 @@
       "speakersIdentified": "話者を識別しました",
       "typeNamePlaceholder": "名前を入力",
       "knownSpeakers": "登録済みの話者",
+      "thisIsMe": "これは自分です",
       "meetingAttendees": "会議の参加者",
       "assignName": "名前を割り当て",
       "isThisPerson": "{{name}}さんですか？",

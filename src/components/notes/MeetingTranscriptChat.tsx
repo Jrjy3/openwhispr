@@ -153,6 +153,7 @@ interface SpeakerPickerProps {
   speakerProfiles?: SpeakerProfileLite[];
   participants?: Array<{ email: string; displayName: string | null }>;
   onSelectName: (name: string, email?: string | null, profileId?: number) => void;
+  offerSelf?: boolean;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }
 
@@ -245,11 +246,26 @@ function AddContactButton({
   );
 }
 
-function SpeakerPicker({ speakerProfiles, participants, onSelectName, t }: SpeakerPickerProps) {
+function SpeakerPicker({
+  speakerProfiles,
+  participants,
+  onSelectName,
+  offerSelf = false,
+  t,
+}: SpeakerPickerProps) {
   const [search, setSearch] = useState("");
   const lower = search.toLowerCase();
   const trimmed = search.trim();
   const trimmedLower = trimmed.toLowerCase();
+
+  // Naming a speaker "You" is how the transcript knows a voice is the user's.
+  const youLabel = t("notes.speaker.you");
+  const youLower = youLabel.toLowerCase();
+  const showSelf =
+    offerSelf &&
+    (!search ||
+      youLower.includes(lower) ||
+      t("notes.speaker.thisIsMe").toLowerCase().includes(lower));
 
   const filteredParticipants = (participants || []).filter(
     (p) =>
@@ -259,12 +275,15 @@ function SpeakerPicker({ speakerProfiles, participants, onSelectName, t }: Speak
   );
   const filteredProfiles = (speakerProfiles || []).filter(
     (p) =>
-      !search ||
-      p.display_name.toLowerCase().includes(lower) ||
-      (p.email && p.email.toLowerCase().includes(lower))
+      // The voice profile saved under "You" is the "This is me" row.
+      !(offerSelf && p.display_name.trim().toLowerCase() === youLower) &&
+      (!search ||
+        p.display_name.toLowerCase().includes(lower) ||
+        (p.email && p.email.toLowerCase().includes(lower)))
   );
 
   const hasExactMatch =
+    (showSelf && trimmedLower === youLower) ||
     filteredParticipants.some(
       (p) =>
         (p.displayName || "").toLowerCase() === trimmedLower ||
@@ -296,7 +315,8 @@ function SpeakerPicker({ speakerProfiles, participants, onSelectName, t }: Speak
     }
   };
 
-  const isEmpty = !filteredParticipants.length && !filteredProfiles.length && !canCreate;
+  const isEmpty =
+    !showSelf && !filteredParticipants.length && !filteredProfiles.length && !canCreate;
 
   return (
     <>
@@ -312,6 +332,21 @@ function SpeakerPicker({ speakerProfiles, participants, onSelectName, t }: Speak
         />
       </div>
       <div className="max-h-52 overflow-y-auto">
+        {showSelf && (
+          <div className="p-1 border-b border-border/70">
+            <button
+              onClick={() => {
+                onSelectName(youLabel, null);
+                setSearch("");
+              }}
+              className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-foreground/70 hover:bg-foreground/5 transition-colors cursor-pointer"
+            >
+              <span dir="auto" className="truncate flex-1 text-start">
+                {t("notes.speaker.thisIsMe")}
+              </span>
+            </button>
+          </div>
+        )}
         {filteredParticipants.length > 0 && (
           <div className="p-1 border-b border-border/70">
             <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground">
@@ -402,6 +437,7 @@ function SpeakerLabel({
   participants,
   colorIdx,
   isOriginallyYou,
+  offerSelf,
   onMap,
   onConfirm,
   onDismiss,
@@ -414,6 +450,7 @@ function SpeakerLabel({
   participants?: Array<{ email: string; displayName: string | null }>;
   colorIdx: number;
   isOriginallyYou: boolean;
+  offerSelf: boolean;
   onMap?: (speakerId: string, name: string, email?: string | null, profileId?: number) => void;
   onConfirm?: (speakerId: string, name: string, profileId: number) => void;
   onDismiss?: (speakerId: string) => void;
@@ -491,6 +528,7 @@ function SpeakerLabel({
             onMap?.(speakerId, name, email, profileId);
             setOpen(false);
           }}
+          offerSelf={offerSelf}
           t={t}
         />
       </PopoverContent>
@@ -566,6 +604,7 @@ export function SelectionBar({
               onAssignName(name, email, profileId);
               setOpen(false);
             }}
+            offerSelf
             t={t}
           />
         </PopoverContent>
@@ -632,6 +671,9 @@ const SegmentRow = memo(function SegmentRow({
   const hasSpeaker = !!segment.speaker;
   const isOriginallyYou = segment.speaker === "you";
   const isSystemSpeaker = hasSpeaker && !selfSide;
+  // Only a mic cluster can be the user: an in-person meeting can't tell which
+  // voice is theirs, while a call's remote voices never are.
+  const offerSelf = segment.source === "mic" && !selfSide;
   const selectable = !!onToggleSelect;
 
   const canAddContact =
@@ -650,6 +692,7 @@ const SegmentRow = memo(function SegmentRow({
         participants={participants}
         colorIdx={colorIdx}
         isOriginallyYou={isOriginallyYou}
+        offerSelf={offerSelf}
         onMap={onMapSpeaker}
         onConfirm={onConfirmSuggestion}
         onDismiss={onDismissSuggestion}
