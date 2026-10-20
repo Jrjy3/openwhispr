@@ -52,18 +52,18 @@ import {
   cloudAccessFor,
   cloudCleanupNeedsAccount,
   parseWorkflow,
-  unsetSelection,
+  workflowSelection,
+  workflowSwitchedOff,
 } from '@/lib/aiWorkflows';
 import { isLocalModelKey } from '@/lib/localModelCatalog';
-import {
-  getDictationAgentName,
-  isDictationAgentEnabled,
-  isNoteChatEnabled,
-  voiceAssistantToggleConfig,
-} from '@/lib/dictationAgent';
+import { getDictationAgentName } from '@/lib/dictationAgent';
 import { safeHaptics } from '@/lib/utils';
 import { SystemIcon, type LucideIconName } from '@/components/ui/SystemIcon';
-import { type ModeSwitchResult, switchWorkflowMode } from '@/lib/workflowModeSwitch';
+import {
+  leavingLocalModeWithLocalReasoning,
+  type ModeSwitchResult,
+  switchWorkflowMode,
+} from '@/lib/workflowModeSwitch';
 import { getPrivateModeReadiness } from '@/lib/privateMode';
 import {
   getLocalReasoningReadiness,
@@ -118,25 +118,29 @@ function joinNames(names: string[]): string {
 }
 
 // A workflow that can be turned off: its switch sits above Mode, with the workflow's own
-// settings row under it while it is on.
+// settings row under it while it is on. A disabled switch shows why in its description.
 function WorkflowSwitchCard({
   title,
+  label,
   description,
   icon,
   mdIcon,
   enabled,
+  disabled = false,
   onToggle,
   offNote,
   children,
 }: {
   title: string;
+  label: string;
   description: string;
   icon: string;
   mdIcon: LucideIconName;
   enabled: boolean;
+  disabled?: boolean;
   onToggle: (value: boolean) => void;
   offNote: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }): React.JSX.Element {
   return (
     <>
@@ -147,12 +151,20 @@ function WorkflowSwitchCard({
           mdIcon={mdIcon}
           title={title}
           description={description}
-          rightElement={<SettingsSwitch value={enabled} onValueChange={onToggle} />}
+          disabled={disabled}
+          rightElement={
+            <SettingsSwitch
+              accessibilityLabel={label}
+              value={enabled}
+              disabled={disabled}
+              onValueChange={onToggle}
+            />
+          }
           showChevron={false}
         />
         {enabled ? children : null}
       </SettingsSection>
-      {enabled ? null : <SectionFooter>{offNote}</SectionFooter>}
+      {enabled || disabled ? null : <SectionFooter>{offNote}</SectionFooter>}
     </>
   );
 }
@@ -165,6 +177,7 @@ function CleanupSettings({ enabled }: { enabled: boolean }): React.JSX.Element {
   return (
     <WorkflowSwitchCard
       title="Enable Text Cleanup"
+      label="Text Cleanup"
       description="Use AI to remove filler words, fix grammar, and polish punctuation."
       icon="sparkles"
       mdIcon="Sparkles"
@@ -184,73 +197,57 @@ function CleanupSettings({ enabled }: { enabled: boolean }): React.JSX.Element {
   );
 }
 
-// Note chat and the voice assistant share this workflow's model but switch on and off apart, so
-// Private mode can turn the voice assistant off while note chat keeps working.
-function AssistantSettings(): React.JSX.Element {
-  const config = useConfigStore((state) => state.config);
-  const updateConfig = useConfigStore((state) => state.updateConfig);
-  const privateMode = useProcessingModeStore((state) => state.activeMode === 'private');
+function NoteChatSettings({ enabled }: { enabled: boolean }): React.JSX.Element {
   const toggleNoteChat = useConfigToggle('noteChatEnabled');
-  const chatEnabled = config ? isNoteChatEnabled(config) : true;
-  const voiceEnabled = config ? isDictationAgentEnabled(config) : true;
-  const agentName = config ? getDictationAgentName(config) : undefined;
   return (
-    <>
-      <SettingsSection>
-        <SettingsRow
-          iconStyle="line"
-          icon="bubble.left.and.bubble.right"
-          mdIcon="MessagesSquare"
-          title="Note Chat"
-          description="Ask questions about your notes and get answers from them."
-          rightElement={
-            <SettingsSwitch
-              accessibilityLabel="Note Chat"
-              value={chatEnabled}
-              onValueChange={toggleNoteChat}
-            />
-          }
-          showChevron={false}
-        />
-        <SettingsRow
-          iconStyle="line"
-          icon="person.wave.2"
-          mdIcon="UserRoundCog"
-          title="Voice Assistant"
-          description={
-            privateMode
-              ? PRIVATE_MODE_LOCKED_REASON
-              : 'Say your assistant’s name while dictating to give it commands.'
-          }
-          disabled={privateMode}
-          rightElement={
-            <SettingsSwitch
-              accessibilityLabel="Voice Assistant"
-              value={voiceEnabled && !privateMode}
-              disabled={privateMode}
-              onValueChange={(enabled) => {
-                safeHaptics('light');
-                void updateConfig(voiceAssistantToggleConfig(config, enabled));
-              }}
-            />
-          }
-          showChevron={false}
-        />
-        {voiceEnabled && !privateMode ? (
-          <SettingsRow
-            iconStyle="line"
-            icon="slider.horizontal.3"
-            mdIcon="SlidersHorizontal"
-            title="Voice Assistant Settings"
-            subtitle={agentName}
-            onPress={() => router.push('/(account)/dictation-agent')}
-          />
-        ) : null}
-      </SettingsSection>
-      {chatEnabled || voiceEnabled ? null : (
-        <SectionFooter>Note chat and the voice assistant are off.</SectionFooter>
-      )}
-    </>
+    <WorkflowSwitchCard
+      title="Enable Note Chat"
+      label="Note Chat"
+      description="Ask questions about your notes and get answers from them."
+      icon="bubble.left.and.bubble.right"
+      mdIcon="MessagesSquare"
+      enabled={enabled}
+      onToggle={toggleNoteChat}
+      offNote="Notes don’t offer Ask about this note while note chat is off."
+    />
+  );
+}
+
+// Local Mode turns the voice assistant off.
+function VoiceAssistantSettings({ enabled }: { enabled: boolean }): React.JSX.Element {
+  const updateConfig = useConfigStore((state) => state.updateConfig);
+  const agentName = useConfigStore((state) =>
+    state.config ? getDictationAgentName(state.config) : undefined,
+  );
+  const privateMode = useProcessingModeStore((state) => state.activeMode === 'private');
+  return (
+    <WorkflowSwitchCard
+      title="Enable Voice Assistant"
+      label="Voice Assistant"
+      description={
+        privateMode
+          ? PRIVATE_MODE_LOCKED_REASON
+          : 'Tap the wand on the OpenWhispr keyboard and say what to write.'
+      }
+      icon="person.wave.2"
+      mdIcon="UserRoundCog"
+      enabled={enabled && !privateMode}
+      disabled={privateMode}
+      onToggle={(value) => {
+        safeHaptics('light');
+        void updateConfig({ dictationAgentEnabled: value });
+      }}
+      offNote="The OpenWhispr keyboard shows no wand."
+    >
+      <SettingsRow
+        iconStyle="line"
+        icon="slider.horizontal.3"
+        mdIcon="SlidersHorizontal"
+        title="Voice Assistant Settings"
+        subtitle={agentName}
+        onPress={() => router.push('/(account)/dictation-agent')}
+      />
+    </WorkflowSwitchCard>
   );
 }
 
@@ -310,8 +307,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
   const setActiveMode = useProcessingModeStore((state) => state.setActiveMode);
   const activeMode = useProcessingModeStore((state) => state.activeMode);
   const cloudAccess = useAuthStore((state) => cloudAccessFor(state.user));
-  const storedSelection =
-    config?.inference?.[scope] ?? unsetSelection(scope, activeMode, cloudAccess);
+  const storedSelection = workflowSelection(config, scope, activeMode, cloudAccess);
   // Local Mode runs dictation on this phone whatever is saved, so a saved Cloud dictation (a guest
   // held in Local Mode) shows as On-Device (Automatic), which is what runs.
   const lockedByPrivateMode =
@@ -410,19 +406,15 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
   // Keys are stored per provider (per server for Custom), so every workflow on it shares one.
   const keyOwner =
     provider?.id === 'custom' ? 'this server' : providerDisplayName(provider?.id ?? '');
-  // Text Cleanup, and note chat with the voice assistant, can be switched off; then they use no key.
-  const switchedOff = (workflow: MobileInferenceScope): boolean =>
-    (workflow === 'cleanup' && !(config?.cleanupEnabled ?? true)) ||
-    (workflow === 'agent' &&
-      !!config &&
-      !isNoteChatEnabled(config) &&
-      !isDictationAgentEnabled(config));
-  const workflowOff = switchedOff(scope);
+  const workflowOff = workflowSwitchedOff(config, scope);
+  // A switched-off workflow uses no key, nor does the voice assistant in Local Mode.
+  const usesKey = (workflow: MobileInferenceScope): boolean =>
+    !workflowSwitchedOff(config, workflow) && !(activeMode === 'private' && workflow === 'agent');
   const sharedWith = WORKFLOWS.filter((other) => {
     const saved = config?.inference?.[other];
     return (
       other !== scope &&
-      !switchedOff(other) &&
+      usesKey(other) &&
       saved?.mode === 'providers' &&
       saved.providerId === provider?.id &&
       (provider?.id !== 'custom' ||
@@ -548,8 +540,9 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
       );
       return;
     }
-    // Tapping the shown mode saves it when nothing of the user's own is saved, since an unsaved
-    // default follows the mode and the account (unsetSelection), and a pin is released with them.
+    // Tapping the shown mode saves it as the user's own when nothing of theirs is saved, since an
+    // unsaved default follows the mode and the account (unsetSelection), and onboarding releases a
+    // pin.
     const ownChoice = !!config?.inference?.[scope] && !config.pinnedInference?.includes(scope);
     if (mode === savedSelection.mode && ownChoice) {
       setSelection(savedSelection);
@@ -664,8 +657,20 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
     try {
       const saved = await prepareSelection();
       if (!saved) return;
+      const localReasoningReady = await leavingLocalModeWithLocalReasoning(
+        scope,
+        activeMode,
+        saved.mode,
+      );
       await updateConfig(
-        workflowSaveConfig(useConfigStore.getState().config, scope, saved, activeMode, cloudAccess),
+        workflowSaveConfig(
+          useConfigStore.getState().config,
+          scope,
+          saved,
+          activeMode,
+          cloudAccess,
+          localReasoningReady,
+        ),
       );
       if (useConfigStore.getState().error) {
         showError('Unable to save your selection. Please try again.');
@@ -819,7 +824,8 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         keyboardDismissMode="interactive"
       >
         {scope === 'cleanup' ? <CleanupSettings enabled={!workflowOff} /> : null}
-        {scope === 'agent' ? <AssistantSettings /> : null}
+        {scope === 'noteChat' ? <NoteChatSettings enabled={!workflowOff} /> : null}
+        {scope === 'agent' ? <VoiceAssistantSettings enabled={!workflowOff} /> : null}
         {workflowOff ? null : (
           <>
             <InferenceModePicker

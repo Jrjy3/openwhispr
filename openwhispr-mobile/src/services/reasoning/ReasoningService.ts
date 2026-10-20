@@ -63,7 +63,10 @@ export class ReasoningService {
       // and skip server-side resolution.
       body.systemPrompt = options.systemPrompt;
     } else {
-      // Let the API resolve a localized cleanup prompt from these fields.
+      // Let the API resolve a localized cleanup prompt from these fields. promptMode "cleanup" keeps
+      // the API from treating a dictation that addresses the assistant by name as a command: the
+      // voice assistant is the keyboard's compose button.
+      body.promptMode = 'cleanup';
       if (options.language) body.language = options.language;
       if (options.locale) body.locale = options.locale;
       if (options.customDictionary && options.customDictionary.length > 0) {
@@ -72,10 +75,7 @@ export class ReasoningService {
       if (options.tone && options.tone !== 'default') {
         body.tone = options.tone;
       }
-      if (options.customPrompt) {
-        body.customPrompt = options.customPrompt;
-        body.promptMode = 'cleanup';
-      }
+      if (options.customPrompt) body.customPrompt = options.customPrompt;
     }
 
     if (options.agentName) {
@@ -245,13 +245,13 @@ export class ReasoningService {
     const payload = buildChatOverNotePayload(request);
     const { getInferenceSelection } =
       require('@/lib/inferenceRouting') as typeof import('@/lib/inferenceRouting');
-    const selection = request.inferenceRoute ?? getInferenceSelection('agent');
+    const selection = request.inferenceRoute ?? getInferenceSelection('noteChat');
     if (selection?.mode === 'providers' || selection?.mode === 'local') {
       return this.processText({
         text: payload.text,
         systemPrompt: payload.systemPrompt,
         signal: request.signal,
-        inferenceScope: 'agent',
+        inferenceScope: 'noteChat',
         inferenceRoute: request.inferenceRoute,
         routing: request.routing,
       });

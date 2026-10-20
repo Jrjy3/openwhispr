@@ -302,6 +302,36 @@ describe('in Local Mode with nothing of its own saved for cleanup', () => {
     expect(mockReadiness).toHaveBeenCalledWith({ refresh: true });
     expect(result.text).toBe('cleaned:um hello there');
   });
+
+  // A dictation change from Cloud holds cleanup there, which Local Mode can't run without an
+  // account, so it cleans on this phone like an unsaved one (workflowSelection).
+  describe('with Cloud held automatically', () => {
+    beforeEach(() => {
+      mockConfig = {
+        ...mockConfig,
+        inference: { dictation: { mode: 'local' }, cleanup: { mode: 'openwhispr' } },
+        pinnedInference: ['cleanup'],
+      };
+    });
+
+    it('cleans on this phone', async () => {
+      mockReadiness.mockResolvedValue({ status: 'ready', tokenCounting: true });
+
+      const result = await transcribeOnDevice();
+
+      expect(result.text).toBe('cleaned:um hello there');
+    });
+
+    it('skips quietly when Apple Intelligence cannot run', async () => {
+      mockReadiness.mockResolvedValue({ status: 'unsupportedDevice', tokenCounting: false });
+
+      const result = await transcribeOnDevice();
+
+      expect(mockReason).not.toHaveBeenCalled();
+      expect(result.text).toBe('um hello there');
+      expect(result.transcription.cleanupWarning).toBeUndefined();
+    });
+  });
 });
 
 // Cleaning a dictation made on this phone with Cloud is a separate pass that refuses anonymous

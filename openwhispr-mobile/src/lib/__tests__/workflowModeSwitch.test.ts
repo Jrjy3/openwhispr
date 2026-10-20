@@ -29,13 +29,27 @@ jest.mock('@/lib/privateMode', () => ({
 }));
 jest.mock('@/lib/localReasoning', () => ({
   ...jest.requireActual('@/lib/localReasoning'),
-  getLocalReasoningReadiness: () => mockLocalReasoningReadiness(),
+  getLocalReasoningReadiness: (...args: unknown[]) => mockLocalReasoningReadiness(...args),
   getLocalReasoningUnavailableMessage: () => 'Apple Intelligence is turned off.',
 }));
 
 import { pickLocalModel, switchWorkflowMode } from '../workflowModeSwitch';
 
 let alert: jest.SpyInstance;
+
+// Turning Local Mode on from Cloud moves only dictation; the rest stay on Cloud, where they ran.
+const LOCAL_FROM_CLOUD = {
+  defaultMode: 'private',
+  inference: {
+    dictation: { mode: 'local' },
+    upload: { mode: 'openwhispr' },
+    cleanup: { mode: 'openwhispr' },
+    notes: { mode: 'openwhispr' },
+    noteChat: { mode: 'openwhispr' },
+    agent: { mode: 'openwhispr' },
+  },
+  pinnedInference: ['upload', 'cleanup', 'notes', 'noteChat', 'agent'],
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -73,6 +87,20 @@ it('asks an anonymous user to create an account before Cloud cleanup in Local Mo
   expect(mockUpdateConfig).not.toHaveBeenCalled();
 });
 
+// Bring Your Own Key dictation also needs the separate Cloud pass.
+it('asks an anonymous user to create an account before Cloud cleanup under Bring Your Own Key', async () => {
+  mockUser = { id: 'a', isAnonymous: true };
+  mockActiveMode = 'providers';
+  mockConfig = { defaultMode: 'providers' };
+  await expect(switchWorkflowMode('cleanup', 'openwhispr')).resolves.toBe('refused');
+  expect(alert).toHaveBeenCalledWith(
+    'Create an account',
+    'Create an account to use cloud cleanup with cloud processing, or set Dictation to On-Device in Account → AI Models.',
+    expect.any(Array),
+  );
+  expect(mockUpdateConfig).not.toHaveBeenCalled();
+});
+
 it('lets an anonymous user pick Cloud cleanup outside Local Mode, where Cloud dictates', async () => {
   mockUser = { id: 'a', isAnonymous: true };
   await expect(switchWorkflowMode('cleanup', 'openwhispr')).resolves.toBe('switched');
@@ -82,10 +110,7 @@ it('lets an anonymous user pick Cloud cleanup outside Local Mode, where Cloud di
 it('switches dictation to On-Device along with the app mode', async () => {
   await expect(switchWorkflowMode('dictation', 'local')).resolves.toBe('switched');
   expect(mockSetActiveMode).toHaveBeenCalledWith('private', true);
-  expect(mockUpdateConfig).toHaveBeenCalledWith({
-    defaultMode: 'private',
-    inference: { dictation: { mode: 'local' } },
-  });
+  expect(mockUpdateConfig).toHaveBeenCalledWith(LOCAL_FROM_CLOUD);
 });
 
 it('opens the model list when no on-device transcription model is downloaded', async () => {
@@ -206,20 +231,85 @@ describe('switching dictation', () => {
   it('to On-Device turns Local Mode on', async () => {
     await expect(switchWorkflowMode('dictation', 'local')).resolves.toBe('switched');
     expect(mockSetActiveMode).toHaveBeenCalledWith('private', true);
-    expect(mockUpdateConfig).toHaveBeenCalledWith({
-      defaultMode: 'private',
-      inference: { dictation: { mode: 'local' } },
-    });
+    expect(mockUpdateConfig).toHaveBeenCalledWith(LOCAL_FROM_CLOUD);
   });
 
-  it('to OpenWhispr Cloud turns Local Mode off', async () => {
+  // Only dictation moves: note formatting stays on this phone, where Local Mode ran it, and with an
+  // account, uploads and cleanup stay on Cloud, where Local Mode ran them. Note chat, which Local
+  // Mode asked about before sending it to Cloud, stays on this phone.
+  it('to OpenWhispr Cloud turns Local Mode off and leaves the other workflows where they ran', async () => {
     mockActiveMode = 'private';
     mockConfig = { defaultMode: 'private', inference: { dictation: { mode: 'local' } } };
     await expect(switchWorkflowMode('dictation', 'openwhispr')).resolves.toBe('switched');
     expect(mockSetActiveMode).toHaveBeenCalledWith('cloud', true);
     expect(mockUpdateConfig).toHaveBeenCalledWith({
       defaultMode: 'cloud',
-      inference: { dictation: { mode: 'openwhispr' } },
+      inference: {
+        dictation: { mode: 'openwhispr' },
+        upload: { mode: 'openwhispr' },
+        cleanup: { mode: 'openwhispr' },
+        notes: { mode: 'local' },
+        noteChat: { mode: 'local' },
+      },
+      pinnedInference: ['upload', 'cleanup', 'notes', 'noteChat'],
+    });
+  });
+
+  // Saved On-Device notes never fall back to Cloud, so without Apple Intelligence they stay on
+  // Cloud, which Local Mode asked before using.
+  it('to OpenWhispr Cloud holds notes on Cloud when Apple Intelligence cannot run them', async () => {
+    mockLocalReasoningReadiness.mockResolvedValue({ status: 'unavailable', tokenCounting: false });
+    mockActiveMode = 'private';
+    mockConfig = { defaultMode: 'private', inference: { dictation: { mode: 'local' } } };
+    await expect(switchWorkflowMode('dictation', 'openwhispr')).resolves.toBe('switched');
+    expect(mockUpdateConfig.mock.calls[0][0].inference.notes).toEqual({ mode: 'openwhispr' });
+  });
+
+  // The cached readiness outlives a change in iOS Settings, so leaving Local Mode asks again.
+  it('asks afresh whether Apple Intelligence can run only when leaving Local Mode', async () => {
+    mockActiveMode = 'private';
+    mockConfig = { defaultMode: 'private', inference: { dictation: { mode: 'local' } } };
+    await switchWorkflowMode('dictation', 'openwhispr');
+    expect(mockLocalReasoningReadiness).toHaveBeenCalledWith({ refresh: true });
+
+    mockLocalReasoningReadiness.mockClear();
+    mockActiveMode = 'cloud';
+    mockConfig = { defaultMode: 'cloud', inference: { dictation: { mode: 'openwhispr' } } };
+    await switchWorkflowMode('dictation', 'local');
+    expect(mockLocalReasoningReadiness).not.toHaveBeenCalled();
+  });
+
+  // The readiness check is awaited before the config is read, so a save made meanwhile is kept.
+  it('builds the saved config from the config as it is after the readiness check', async () => {
+    mockActiveMode = 'private';
+    mockConfig = { defaultMode: 'private', inference: { dictation: { mode: 'local' } } };
+    mockLocalReasoningReadiness.mockImplementation(async () => {
+      mockConfig = {
+        defaultMode: 'private',
+        inference: { dictation: { mode: 'local' }, agent: { mode: 'openwhispr' } },
+      };
+      return { status: 'ready', tokenCounting: false };
+    });
+    await switchWorkflowMode('dictation', 'openwhispr');
+    expect(mockUpdateConfig.mock.calls[0][0].inference.agent).toEqual({ mode: 'openwhispr' });
+  });
+
+  // Without an account Local Mode cleaned on this phone, while a session uploaded to Cloud.
+  it('to OpenWhispr Cloud holds cleanup on this phone for an anonymous session', async () => {
+    mockUser = { id: 'a', isAnonymous: true };
+    mockActiveMode = 'private';
+    mockConfig = { defaultMode: 'private', inference: { dictation: { mode: 'local' } } };
+    await expect(switchWorkflowMode('dictation', 'openwhispr')).resolves.toBe('switched');
+    expect(mockUpdateConfig).toHaveBeenCalledWith({
+      defaultMode: 'cloud',
+      inference: {
+        dictation: { mode: 'openwhispr' },
+        upload: { mode: 'openwhispr' },
+        cleanup: { mode: 'local' },
+        notes: { mode: 'local' },
+        noteChat: { mode: 'local' },
+      },
+      pinnedInference: ['upload', 'cleanup', 'notes', 'noteChat'],
     });
   });
 

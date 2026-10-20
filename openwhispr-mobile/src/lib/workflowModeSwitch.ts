@@ -8,7 +8,8 @@ import {
   requiresRealAccount,
   showAccountRequiredAlert,
 } from '@/lib/accountAccess';
-import { workflowSaveConfig } from '@/lib/inferenceModes';
+import { cloudAccessFor } from '@/lib/aiWorkflows';
+import { localSelection, workflowSaveConfig } from '@/lib/inferenceModes';
 import {
   canRunLocalReasoning,
   getLocalReasoningReadiness,
@@ -16,6 +17,7 @@ import {
 } from '@/lib/localReasoning';
 import type { LocalModelKey } from '@/lib/localModelCatalog';
 import { type InferenceSelection, type MobileInferenceScope } from '@/lib/mobileProviders';
+import type { InferenceMode, ProcessingMode } from '@/types';
 import { getPrivateModeReadiness, getPrivateModeUnavailableMessage } from '@/lib/privateMode';
 
 type SpeechScope = 'dictation' | 'upload';
@@ -62,6 +64,18 @@ async function appleIntelligenceReady(): Promise<ModeSwitchResult | null> {
   return 'not-ready';
 }
 
+// Whether Apple Intelligence can run here, which decides where note formatting with nothing saved
+// is held when dictation leaves Local Mode (workflowSaveConfig). Asked only then, and afresh, since
+// the cached answer outlives a change in iOS Settings.
+export async function leavingLocalModeWithLocalReasoning(
+  scope: MobileInferenceScope,
+  activeMode: ProcessingMode,
+  target: InferenceMode,
+): Promise<boolean> {
+  if (scope !== 'dictation' || activeMode !== 'private' || target === 'local') return false;
+  return (await getLocalReasoningReadiness({ refresh: true })).status === 'ready';
+}
+
 // Applies OpenWhispr Cloud or On-Device to a workflow as soon as it is tapped, after its sign-in
 // and model checks. Dictation carries the app mode with it: On-Device turns Local Mode on.
 export async function switchWorkflowMode(
@@ -73,11 +87,11 @@ export async function switchWorkflowMode(
     showAccountRequiredAlert(isSpeechScope(scope) ? 'cloud transcription' : 'cloud AI');
     return 'refused';
   }
-  // Local Mode dictates on this iPhone, so Cloud cleanup is a separate pass that needs an account.
+  // Outside Cloud dictation, Cloud cleanup is a separate pass that needs an account.
   if (
     mode === 'openwhispr' &&
     scope === 'cleanup' &&
-    useProcessingModeStore.getState().activeMode === 'private' &&
+    useProcessingModeStore.getState().activeMode !== 'cloud' &&
     requiresRealAccount(user)
   ) {
     showAccountRequiredAlert('cloud cleanup');
@@ -90,14 +104,22 @@ export async function switchWorkflowMode(
     if (blocked) return blocked;
   }
 
-  const { config, updateConfig } = useConfigStore.getState();
   const { activeMode, setActiveMode } = useProcessingModeStore.getState();
+  const localReasoningReady = await leavingLocalModeWithLocalReasoning(scope, activeMode, mode);
+  const { config, updateConfig } = useConfigStore.getState();
   if (scope === 'dictation') setActiveMode(mode === 'local' ? 'private' : 'cloud', true);
   const selection: InferenceSelection =
-    mode === 'local'
-      ? (config?.rememberedInference?.[scope]?.local ?? { mode: 'local' })
-      : { mode: 'openwhispr' };
-  await updateConfig(workflowSaveConfig(config, scope, selection, activeMode));
+    mode === 'local' ? localSelection(config, scope) : { mode: 'openwhispr' };
+  await updateConfig(
+    workflowSaveConfig(
+      config,
+      scope,
+      selection,
+      activeMode,
+      cloudAccessFor(user),
+      localReasoningReady,
+    ),
+  );
   return 'switched';
 }
 
@@ -117,7 +139,7 @@ export async function pickLocalModel(
       ...config?.rememberedInference,
       [scope]: { ...config?.rememberedInference?.[scope], local: selection },
     },
-    // A picked model is the user's own choice, so leaving Bring Your Own Key keeps it.
+    // A picked model is the user's own choice, so onboarding never releases it.
     ...(config?.pinnedInference
       ? { pinnedInference: config.pinnedInference.filter((pinned) => pinned !== scope) }
       : {}),
