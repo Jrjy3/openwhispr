@@ -88,3 +88,78 @@ test("cloud model reconciliation respects each scope's active mode", async (t) =
     });
   }
 });
+
+// The reported path: Chat's provider key was never written, so it loads as the
+// default Groq, and the app's own startup runs the repairs (#2789).
+test("a Self-Hosted Chat model survives the app's startup with the default provider", async (t) => {
+  const { storage } = installBrowserGlobals(t, {
+    window: { electronAPI: { getOpenAIKey: async () => "", setDictionary: async () => {} } },
+  });
+  const vite = await createRendererServer(t, {
+    cachePrefix: "openwhispr-self-hosted-model-startup-test-",
+  });
+
+  for (const [mode, expected] of [
+    ["self-hosted", "my-hosted-model"],
+    ["providers", "openai/gpt-oss-120b"],
+  ]) {
+    storage.clear();
+    storage.setItem("_llmScopeKeysMigrated", "1");
+    // Already holds the agent name, so startup starts no cloud dictionary sync.
+    storage.setItem("customDictionary", '["OpenWhispr"]');
+    storage.setItem("chatAgentMode", mode);
+    storage.setItem("chatAgentModel", "my-hosted-model");
+    vite.moduleGraph.invalidateAll();
+    const { initializeSettings, useSettingsStore } = await vite.ssrLoadModule(
+      "/stores/settingsStore.ts"
+    );
+    try {
+      await initializeSettings();
+    } finally {
+      const { default: i18n } = await vite.ssrLoadModule("/i18n.ts");
+      await i18n.changeLanguage("en");
+    }
+
+    const state = useSettingsStore.getState();
+    assert.equal(state.chatAgentProvider, "groq", mode);
+    assert.equal(state.chatAgentModel, expected, mode);
+    assert.equal(storage.getItem("chatAgentModel"), expected, `${mode} in storage`);
+  }
+});
+
+test("switching modes clears a model the new mode's provider doesn't serve", async (t) => {
+  installBrowserGlobals(t);
+  const vite = await createRendererServer(t, {
+    cachePrefix: "openwhispr-mode-switch-patch-test-",
+  });
+  const { modeSwitchPatch } = await vite.ssrLoadModule("/utils/llmModeSwitch.ts");
+  const selfHostedUnderGroq = { provider: "groq", model: "my-hosted-model" };
+
+  assert.deepEqual(modeSwitchPatch(selfHostedUnderGroq, "providers"), {
+    mode: "providers",
+    cloudMode: "byok",
+    model: "",
+  });
+  assert.deepEqual(
+    modeSwitchPatch({ provider: "groq", model: "openai/gpt-oss-120b" }, "providers"),
+    { mode: "providers", cloudMode: "byok" }
+  );
+  assert.deepEqual(modeSwitchPatch({ provider: "custom", model: "my-hosted-model" }, "providers"), {
+    mode: "providers",
+    cloudMode: "byok",
+  });
+  assert.deepEqual(modeSwitchPatch(selfHostedUnderGroq, "openwhispr"), {
+    mode: "openwhispr",
+    cloudMode: "openwhispr",
+  });
+  assert.deepEqual(modeSwitchPatch(selfHostedUnderGroq, "local"), {
+    mode: "local",
+    cloudMode: "byok",
+    provider: "",
+    model: "",
+  });
+  assert.deepEqual(
+    modeSwitchPatch({ provider: "groq", model: "openai/gpt-oss-120b" }, "self-hosted"),
+    { mode: "self-hosted", cloudMode: "byok" }
+  );
+});

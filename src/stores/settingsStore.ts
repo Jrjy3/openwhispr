@@ -150,7 +150,7 @@ function canonicalTranscriptionBaseUrl(providerId: string): string | null {
   );
 }
 
-function reasoningModelBelongsToProvider(providerId: string, modelId: string): boolean {
+export function reasoningModelBelongsToProvider(providerId: string, modelId: string): boolean {
   if (!modelId) return false;
   // Custom and OpenRouter ids are free-form; any remembered id is valid.
   // Tinfoil's registry entry is refreshed in place from its live catalog.
